@@ -2307,6 +2307,18 @@ body {
 @media (max-width: 900px) { .dashboard-page { display: block; }.dashboard-main { padding: 22px 14px; }.dashboard-primary-grid, .dashboard-secondary-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .dashboard-header { align-items: flex-start; flex-direction: column; }.dashboard-header h1 { font-size: 26px; }.dashboard-pos-link { width: 100%; justify-content: center; }.dashboard-periods { align-items: flex-start; flex-direction: column; }.dashboard-periods > span { align-self: flex-end; }.dashboard-kpi { min-height: 104px; padding: 13px; }.dashboard-kpi > strong { font-size: 20px; } }
 
+.product-unit-preview, .inventory-multiplier-preview { margin-top: 4px; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--clinic-accent) 25%, white); border-radius: 8px; color: var(--clinic-accent); background: color-mix(in srgb, var(--clinic-accent) 7%, white); font-size: 13px; font-weight: 600; }
+.product-unit-preview { grid-column: 1 / -1; }
+.product-unit-preview span, .inventory-multiplier-preview span { margin-left: 5px; color: #718093; font-size: 11px; font-weight: 400; }
+.inventory-multiplier-preview { margin: 18px 0 4px; }
+.inventory-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.inventory-form-actions button { min-width: 120px; }
+.receive-po-button { min-height: 32px; padding: 0 11px; border: 1px solid var(--clinic-accent); border-radius: 6px; color: var(--clinic-accent); background: color-mix(in srgb, var(--clinic-accent) 8%, white); font: 500 11px Prompt, sans-serif; cursor: pointer; }
+.receive-po-button:hover { color: #fff; background: var(--clinic-accent); }
+.purchase-complete-mark { color: #64748b; font-size: 11px; }
+.receive-po-summary { margin: -8px 0 16px; color: #64748b; font-size: 12px; }
+@media (max-width: 600px) { .inventory-form-actions { flex-direction: column-reverse; }.inventory-form-actions button { width: 100%; } }
+
 :root {
   --clinic-accent-soft: color-mix(in srgb, var(--clinic-accent) 9%, white);
   --clinic-accent-hover: color-mix(in srgb, var(--clinic-accent) 82%, #101827);

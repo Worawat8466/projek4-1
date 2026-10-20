@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "next": "latest",
+    "oracledb": "^26.0.0",
     "react": "latest",
     "react-dom": "latest"
-  },
-  "devDependencies": {}
+  }
 }

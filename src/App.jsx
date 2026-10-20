@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { appendSale } from './salesLedger.js';
+import { commitCheckout } from './checkoutStore.js';
 import { defaultSettings, readSettings } from './appSettings.js';
+import { allocateLotsFefo, defaultInventory, readInventory } from './inventoryStore.js';
+import { defaultProducts, readProducts } from './productStore.js';
+import { hashSecret, readLocalAuth } from './localAuth.js';
 
 const menuItems = [
   ['Dashboard', '/dashboard'],
@@ -22,16 +25,25 @@ const pets = {
   pet2: { name: 'เจ้าแมวน้ำ2', breed: 'Golden Retriever (ตัวเล็ก)', image: 'https://images.unsplash.com/photo-1537151608828-ea2b11777ee8?w=120&auto=format&fit=crop&q=70' },
   none: { name: 'ไม่ระบุสัตว์เลี้ยง', breed: 'รายการทั่วไป', image: null }
 };
-const catalog = [
-  { id: 'MED-001', name: 'ยาพารา (Paracetamol)', shortName: 'ยาพารา', category: 'med', type: 'สินค้า', price: 200, stock: '120 แผง' },
-  { id: 'SRV-001', name: 'ตรวจสุขภาพทั่วไป', shortName: 'ตรวจสุขภาพ', category: 'service', type: 'บริการ', price: 150, stock: '-' },
-  { id: 'MED-002', name: 'วัคซีนรวมสุนัข 5 โรค', shortName: 'วัคซีนรวมสุนัข', category: 'med', type: 'สินค้า', price: 350, stock: '15 โดส' },
-  { id: 'SRV-002', name: 'ค่าบริการฉีดวัคซีน/ทำแผล', shortName: 'ฉีดวัคซีน/ทำแผล', category: 'service', type: 'บริการ', price: 100, stock: '-' },
-  { id: 'FOD-001', name: 'Royal Canin Golden Retriever 3kg', shortName: 'อาหารสุนัข Royal Canin', category: 'food', type: 'สินค้า', price: 850, stock: '10 ถุง' }
-];
+function toCatalogItem(product, inventory) {
+  const category = product.category === 'อาหารสัตว์' ? 'food' : product.type === 'บริการ' ? 'service' : 'med';
+  const stock = product.tracksStock
+    ? inventory.filter((lot) => lot.id === product.id).reduce((total, lot) => total + Number(lot.units ?? lot.remainingBaseQuantity) || 0, 0)
+    : null;
+  return {
+    ...product,
+    shortName: product.shortName || product.name,
+    category,
+    type: product.tracksStock ? 'สินค้า' : 'บริการ',
+    price: Number(product.salePrice) || 0,
+    stock: product.tracksStock ? `${stock} ${product.baseUnit}` : '-'
+  };
+}
+
+const defaultCatalog = defaultProducts.map((product) => toCatalogItem(product, defaultInventory));
 const initialCart = {
-  pet1: [{ ...catalog[0], qty: 1 }, { ...catalog[1], qty: 1 }],
-  pet2: [{ ...catalog[0], qty: 1 }, { ...catalog[1], qty: 1 }],
+  pet1: [{ ...defaultCatalog[0], qty: 1 }, { ...defaultCatalog[1], qty: 1 }],
+  pet2: [{ ...defaultCatalog[0], qty: 1 }, { ...defaultCatalog[1], qty: 1 }],
   none: []
 };
 const customers = [
@@ -46,6 +58,8 @@ function LockIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x
 
 export default function App() {
   const [appSettings, setAppSettings] = useState(defaultSettings);
+  const [products, setProducts] = useState(defaultProducts);
+  const [inventory, setInventory] = useState(defaultInventory);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [activePet, setActivePet] = useState('pet1');
@@ -63,16 +77,23 @@ export default function App() {
   useEffect(() => {
     function refreshSettings() {
       setAppSettings(readSettings());
+      setProducts(readProducts());
+      setInventory(readInventory());
     }
     refreshSettings();
     window.addEventListener('clinic-settings-updated', refreshSettings);
+    window.addEventListener('clinic-products-updated', refreshSettings);
+    window.addEventListener('clinic-inventory-updated', refreshSettings);
     window.addEventListener('storage', refreshSettings);
     return () => {
       window.removeEventListener('clinic-settings-updated', refreshSettings);
+      window.removeEventListener('clinic-products-updated', refreshSettings);
+      window.removeEventListener('clinic-inventory-updated', refreshSettings);
       window.removeEventListener('storage', refreshSettings);
     };
   }, []);
 
+  const catalog = useMemo(() => products.map((product) => toCatalogItem(product, inventory)), [products, inventory]);
   const filteredCatalog = useMemo(() => catalog.filter((item) => {
     const matchesCategory = category === 'all' || item.category === category;
     const searchable = `${item.name} ${item.id}`.toLowerCase();
@@ -98,6 +119,18 @@ export default function App() {
   }
 
   function addItem(item) {
+    if (item.tracksStock) {
+      const available = readInventory()
+        .filter((lot) => (lot.productId || lot.id) === item.id)
+        .reduce((total, lot) => total + Number(lot.units || 0), 0);
+      const inCart = Object.values(cart).flat()
+        .filter((cartItem) => cartItem.id === item.id)
+        .reduce((total, cartItem) => total + cartItem.qty, 0);
+      if (inCart >= available) {
+        notify(`สต็อก ${item.shortName} ไม่เพียงพอ`);
+        return;
+      }
+    }
     setCart((current) => {
       const petCart = current[activePet];
       const existing = petCart.find((cartItem) => cartItem.id === item.id);
@@ -117,23 +150,94 @@ export default function App() {
   }
 
   function updateQuantity(petKey, itemId, change) {
+    const item = cart[petKey].find((cartItem) => cartItem.id === itemId);
+    if (change > 0 && item?.tracksStock) {
+      const available = readInventory()
+        .filter((lot) => (lot.productId || lot.id) === itemId)
+        .reduce((total, lot) => total + Number(lot.units || 0), 0);
+      const inCart = Object.values(cart).flat()
+        .filter((cartItem) => cartItem.id === itemId)
+        .reduce((total, cartItem) => total + cartItem.qty, 0);
+      if (inCart >= available) {
+        notify(`สต็อก ${item.shortName} ไม่เพียงพอ`);
+        return;
+      }
+    }
     setCart((current) => ({ ...current, [petKey]: current[petKey].map((item) => item.id === itemId ? { ...item, qty: item.qty + change } : item).filter((item) => item.qty > 0) }));
   }
 
+  function moveItemToPet(sourcePet, itemId, destinationPet) {
+    if (sourcePet === destinationPet) return;
+    setCart((current) => {
+      const item = current[sourcePet].find((cartItem) => cartItem.id === itemId);
+      if (!item) return current;
+      const destinationItems = current[destinationPet];
+      const matchingItem = destinationItems.find((cartItem) => cartItem.id === itemId);
+      return {
+        ...current,
+        [sourcePet]: current[sourcePet].filter((cartItem) => cartItem.id !== itemId),
+        [destinationPet]: matchingItem
+          ? destinationItems.map((cartItem) => cartItem.id === itemId ? { ...cartItem, qty: cartItem.qty + item.qty } : cartItem)
+          : [...destinationItems, item]
+      };
+    });
+    notify(`ย้ายรายการไปให้${pets[destinationPet].name}`);
+  }
+
   function confirmPayment() {
-    const items = Object.entries(cart).flatMap(([petKey, petItems]) => petItems.map((item) => ({
-      productId: item.id,
-      name: item.name,
-      type: item.type,
-      petName: pets[petKey].name,
-      quantity: item.qty,
-      unitPrice: item.price,
-      unitCost: typeof item.costPrice === 'number' ? item.costPrice : null,
-      lineTotal: item.price * item.qty
-    })));
-    if (items.length === 0 || net <= 0) {
+    const items = [];
+    const movements = [];
+    let inventoryAfterSale = readInventory();
+    if (totals.quantity === 0 || net <= 0) {
       setPaymentMethod('');
       notify('ไม่มีรายการสำหรับบันทึกการขาย');
+      return;
+    }
+
+    for (const [petKey, petItems] of Object.entries(cart)) {
+      for (const item of petItems) {
+        let lotAllocations = [];
+        if (item.tracksStock) {
+          const allocation = allocateLotsFefo(inventoryAfterSale, item.id, item.qty);
+          if (!allocation.enough) {
+            setPaymentMethod('');
+            notify(`สต็อก ${item.shortName} ไม่เพียงพอ (เหลือ ${allocation.available} ${item.baseUnit})`);
+            return;
+          }
+          inventoryAfterSale = allocation.inventory;
+          lotAllocations = allocation.allocations;
+          movements.push(...lotAllocations.map((lot) => ({
+            productId: item.id,
+            batch: lot.batch,
+            movementType: 'SALE',
+            baseQuantity: lot.baseQuantity,
+            reason: 'ขายหน้าร้าน'
+          })));
+        }
+        const hasUnitCosts = lotAllocations.length > 0 && lotAllocations.every((lot) => Number.isFinite(lot.unitCostBase));
+        const unitCost = hasUnitCosts
+          ? lotAllocations.reduce((totalCost, lot) => totalCost + lot.baseQuantity * lot.unitCostBase, 0) / item.qty
+          : null;
+        items.push({
+          productId: item.id,
+          name: item.name,
+          type: item.type,
+          petId: petKey === 'none' ? null : petKey,
+          petName: pets[petKey].name,
+          unitName: item.baseUnit || 'หน่วย',
+          quantity: item.qty,
+          baseQuantity: item.qty,
+          unitPrice: item.price,
+          unitCost,
+          lineTotal: item.price * item.qty,
+          lotAllocations
+        });
+      }
+    }
+
+    if (paymentMethod === 'เงินสด' && !appSettings.paymentMethods.cash || paymentMethod === 'พร้อมเพย์' && !appSettings.paymentMethods.promptpay) {
+      setPaymentMethod('');
+      notify('ช่องทางชำระเงินนี้ถูกปิดในตั้งค่า');
       return;
     }
     const now = new Date();
@@ -149,7 +253,7 @@ export default function App() {
       total: net,
       items
     };
-    if (!appendSale(sale)) {
+    if (!commitCheckout(sale, inventoryAfterSale, movements)) {
       notify('บันทึกยอดขายไม่สำเร็จ กรุณาลองอีกครั้ง');
       return;
     }
@@ -158,15 +262,28 @@ export default function App() {
     notify('บันทึกการขายสำเร็จ และพิมพ์ใบเสร็จเรียบร้อย');
   }
 
-  function unlockScreen(event) {
+  async function unlockScreen(event) {
     event.preventDefault();
-    if (/^\d{4,6}$/.test(pin)) {
-      setScreenLocked(false);
-      setPin('');
-      setPinError('');
+    if (!/^\d{4,6}$/.test(pin)) {
+      setPinError('กรุณากรอก PIN 4-6 หลัก');
       return;
     }
-    setPinError('กรุณากรอก PIN 4-6 หลัก');
+    const auth = readLocalAuth();
+    if (!auth?.pinHash) {
+      setPinError('ยังไม่ได้ตั้งค่า PIN สำหรับเครื่องนี้ กรุณาตั้งค่าที่หน้าเข้าสู่ระบบ');
+      return;
+    }
+    try {
+      if (await hashSecret(pin, auth.salt) === auth.pinHash) {
+        setScreenLocked(false);
+        setPin('');
+        setPinError('');
+        return;
+      }
+      setPinError('PIN ไม่ถูกต้อง');
+    } catch {
+      setPinError('ตรวจสอบ PIN ไม่สำเร็จ');
+    }
   }
 
   return <div className="app-shell">
@@ -193,7 +310,7 @@ export default function App() {
         <div className="cart-header"><div><b>รายการขาย</b><small>{totals.quantity} รายการ · {Object.values(cart).filter((items) => items.length).length} สัตว์เลี้ยง</small></div><button className="lock-screen-button" type="button" title="ล็อกหน้าจอ" aria-label="ล็อกหน้าจอ" onClick={() => setScreenLocked(true)}><LockIcon /><span>ล็อก</span></button></div>
         <div className="customer-actions"><button className="customer-button" type="button" onClick={() => { setCustomerQuery(''); setCustomerModalOpen(true); }}>เลือกลูกค้า</button><button className="guest-button" type="button" onClick={() => { setSelectedCustomer(null); notify('เข้าสู่โหมดขายลูกค้าทั่วไป'); }}>ลูกค้าทั่วไป</button></div>
         <div className="customer"><div className="customer-details"><b>{selectedCustomer ? selectedCustomer.name : 'ลูกค้าทั่วไป'}</b><small>{selectedCustomer ? selectedCustomer.phone : 'ไม่ระบุลูกค้า'}</small></div><div className="customer-avatar">{selectedCustomer ? selectedCustomer.name.slice(0, 1) : 'G'}</div></div>
-        <div className="cart-list">{Object.entries(cart).filter(([, items]) => items.length > 0).map(([petKey, items]) => <div className="pet-cart" key={petKey}><div className="cart-items">{items.map((item) => <div className="cart-row" key={item.id}><div><b>{item.shortName}</b><small className={item.type === 'บริการ' ? 'service' : 'product'}>{item.type}</small></div><div className="cart-controls"><div className="quantity"><button aria-label={`ลด ${item.shortName}`} onClick={() => updateQuantity(petKey, item.id, -1)}>-</button><span>{item.qty}</span><button aria-label={`เพิ่ม ${item.shortName}`} onClick={() => updateQuantity(petKey, item.id, 1)}>+</button></div><strong className="mono">฿{item.price * item.qty}</strong></div></div>)}</div><div className="pet-label">{pets[petKey].image ? <img src={pets[petKey].image} alt="" /> : <span className="pet-avatar-placeholder small">-</span>}<b>{pets[petKey].name}</b></div></div>)}{totals.quantity === 0 && <div className="cart-empty"><span>ยังไม่มีสินค้าในบิล</span><small>สแกนบาร์โค้ดหรือเลือกรายการเพื่อเริ่มขาย</small></div>}</div>
+        <div className="cart-list">{Object.entries(cart).filter(([, items]) => items.length > 0).map(([petKey, items]) => <div className="pet-cart" key={petKey}><div className="pet-label">{pets[petKey].image ? <img src={pets[petKey].image} alt="" /> : <span className="pet-avatar-placeholder small">-</span>}<b>{pets[petKey].name}</b></div><div className="cart-items">{items.map((item) => <div className="cart-row" key={item.id}><div className="cart-item-details"><b>{item.shortName}</b><small className={`cart-item-type ${item.type === 'บริการ' ? 'service' : 'product'}`}>{item.type === 'บริการ' ? 'บริการ · ไม่ตัดสต็อก' : `สินค้า · ${item.baseUnit}`}</small><select aria-label={`สัตว์เลี้ยงของ ${item.shortName}`} value={petKey} onChange={(event) => moveItemToPet(petKey, item.id, event.target.value)}>{Object.entries(pets).map(([key, pet]) => <option value={key} key={key}>{pet.name}</option>)}</select></div><div className="cart-controls"><div className="quantity"><button aria-label={`ลด ${item.shortName}`} onClick={() => updateQuantity(petKey, item.id, -1)}>-</button><span>{item.qty}</span><button aria-label={`เพิ่ม ${item.shortName}`} onClick={() => updateQuantity(petKey, item.id, 1)}>+</button></div><strong className="mono">฿{item.price * item.qty}</strong></div></div>)}</div></div>)}{totals.quantity === 0 && <div className="cart-empty"><span>ยังไม่มีสินค้าในบิล</span><small>สแกนบาร์โค้ดหรือเลือกรายการเพื่อเริ่มขาย</small></div>}</div>
         <div className="summary"><div className="summary-line"><span>ยอดรวม ({totals.quantity} รายการ)</span><strong className="mono">฿{totals.subtotal}</strong></div>{discount > 0 && <div className="summary-line discount"><span>ส่วนลด</span><strong className="mono">-฿{discount}</strong></div>}{appSettings.vatEnabled && <div className="summary-line"><span>VAT ({appSettings.vatRate}%)</span><strong className="mono">฿{tax.toFixed(2)}</strong></div>}<div className="summary-line net"><b>ยอดชำระสุทธิ:</b><strong className="mono">฿{net.toFixed(2)}</strong></div><div className="payment-buttons">{appSettings.paymentMethods.promptpay && <button disabled={totals.quantity === 0} onClick={() => setPaymentMethod('พร้อมเพย์')}>พร้อมเพย์</button>}{appSettings.paymentMethods.cash && <button disabled={totals.quantity === 0} onClick={() => setPaymentMethod('เงินสด')}>เงินสด</button>}</div></div>
       </aside>
     </main>
