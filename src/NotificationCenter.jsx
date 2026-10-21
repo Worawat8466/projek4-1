@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
 function formatTime(value) {
@@ -14,6 +15,15 @@ export default function NotificationCenter() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [mountNode, setMountNode] = useState(null);
+  const [panelPosition, setPanelPosition] = useState({ top: 12, left: 196 });
+  const centerRef = useRef(null);
+  const buttonRef = useRef(null);
+
+  useEffect(() => {
+    setMountNode(pathname === '/login' ? null : document.querySelector('.sidebar nav'));
+    setOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (pathname === '/login') return undefined;
@@ -49,7 +59,38 @@ export default function NotificationCenter() {
     };
   }, [pathname]);
 
-  if (pathname === '/login') return null;
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!centerRef.current?.contains(event.target)) setOpen(false);
+    }
+    function closeOnEscape(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  if (pathname === '/login' || !mountNode) return null;
+
+  function togglePanel() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const panelWidth = Math.min(390, window.innerWidth - 24);
+      const panelHeight = Math.min(window.innerHeight * 0.72, 620);
+      const mobile = window.innerWidth <= 900;
+      const top = mobile
+        ? Math.min(rect.bottom + 8, Math.max(12, window.innerHeight - panelHeight - 12))
+        : Math.min(Math.max(12, rect.top), Math.max(12, window.innerHeight - panelHeight - 12));
+      const left = mobile ? 12 : Math.min(rect.right + 10, window.innerWidth - panelWidth - 12);
+      setPanelPosition({ top, left });
+    }
+    setOpen((current) => !current);
+  }
 
   async function markRead(notificationId = null) {
     const response = await fetch('/api/notifications', {
@@ -68,12 +109,12 @@ export default function NotificationCenter() {
     router.push(notification.href);
   }
 
-  return <div className="notification-center">
-    <button className="notification-bell" type="button" aria-label={`การแจ้งเตือน${unreadCount ? ` ${unreadCount} รายการยังไม่อ่าน` : ''}`} aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+  return createPortal(<div className="notification-center" ref={centerRef}>
+    <button className="notification-bell" ref={buttonRef} type="button" aria-label={`การแจ้งเตือน${unreadCount ? ` ${unreadCount} รายการยังไม่อ่าน` : ''}`} title="การแจ้งเตือน" aria-expanded={open} onClick={togglePanel}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
       {unreadCount > 0 && <span className="notification-count">{unreadCount > 99 ? '99+' : unreadCount}</span>}
     </button>
-    {open && <section className="notification-panel" aria-label="การแจ้งเตือน">
+    {open && <section className="notification-panel" style={{ top: panelPosition.top, left: panelPosition.left }} aria-label="การแจ้งเตือน">
       <header className="notification-panel-header">
         <div><h2>การแจ้งเตือน</h2><span>{unreadCount ? `${unreadCount} ยังไม่อ่าน` : 'อ่านครบแล้ว'}</span></div>
         {unreadCount > 0 && <button type="button" onClick={() => markRead().catch(() => setLoadError(true))}>อ่านทั้งหมด</button>}
@@ -86,6 +127,9 @@ export default function NotificationCenter() {
         </button>)}
         {!notifications.length && <p className="notification-empty">ไม่มีรายการที่ต้องติดตาม</p>}
       </div>
+      <footer className="notification-panel-footer">
+        <button type="button" onClick={() => { setOpen(false); router.push('/notifications'); }}>ดูทั้งหมด</button>
+      </footer>
     </section>}
-  </div>;
+  </div>, mountNode);
 }
