@@ -1,5 +1,6 @@
 import '../src/styles.css';
 import ThemeRuntime from '../src/ThemeRuntime.jsx';
+import NotificationCenter from '../src/NotificationCenter.jsx';
 
 export const metadata = {
   title: 'TleClinic POS',
@@ -9,7 +10,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="th">
-      <body><ThemeRuntime />{children}</body>
+      <body><ThemeRuntime />{children}<NotificationCenter /></body>
     </html>
   );
 }

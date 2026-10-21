@@ -161,6 +161,19 @@ export async function validateSession(token) {
   });
 }
 
+export async function getSessionStaffId(token) {
+  if (!token) return null;
+  return withOracleConnection(async (connection) => {
+    const result = await connection.execute(
+      `SELECT s.staff_id FROM auth_sessions a
+         JOIN staff s ON s.staff_id = a.staff_id
+        WHERE a.token_hash = :tokenHash AND a.expires_at > SYSTIMESTAMP AND s.is_active = 'Y'`,
+      { tokenHash: hashToken(token) }, objectRows
+    );
+    return result.rows[0] ? Number(result.rows[0].STAFF_ID) : null;
+  });
+}
+
 export async function verifyStaffPin(token, pin) {
   if (!token) return false;
   return withOracleConnection(async (connection) => {
