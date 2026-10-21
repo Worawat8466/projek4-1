@@ -103,13 +103,12 @@ export async function createProduct(input) {
     const tracksStock = input.type !== 'บริการ';
     const baseCost = input.costPrice == null || input.costPrice === '' ? null : Number(input.costPrice);
     stage = 'insert-product';
-    const productInsert = await connection.execute(
+    await connection.execute(
       `INSERT INTO products
          (category_id, product_code, barcode, product_name, product_type, base_unit,
           base_sale_price, base_cost, min_stock, tracks_stock)
        VALUES (:categoryId, :productCode, :barcode, :productName, :productType, :baseUnit,
-               :salePrice, :baseCost, :minimumStock, :tracksStock)
-       RETURNING product_id INTO :productId`,
+               :salePrice, :baseCost, :minimumStock, :tracksStock)`,
       {
         categoryId,
         productCode: input.id.trim(),
@@ -120,11 +119,15 @@ export async function createProduct(input) {
         salePrice: Number(input.salePrice),
         baseCost,
         minimumStock: tracksStock ? Number(input.minimumStock) || 0 : 0,
-        tracksStock: tracksStock ? 'Y' : 'N',
-        productId: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT }
+        tracksStock: tracksStock ? 'Y' : 'N'
       }
     );
-    const productId = productInsert.outBinds.productId[0];
+    const insertedProduct = await connection.execute(
+      'SELECT product_id FROM products WHERE product_code = :productCode',
+      { productCode: input.id.trim() },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const productId = insertedProduct.rows[0].PRODUCT_ID;
     const multiplier = tracksStock ? Number(input.multiplier) || 1 : 1;
     const baseUnit = input.baseUnit.trim();
     const packUnit = tracksStock ? input.packUnit.trim() : baseUnit;

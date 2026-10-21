@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { defaultSettings, readSettings } from '../../src/appSettings.js';
+import { defaultSettings } from '../../src/appSettings.js';
 import { getLotStatus } from '../../src/inventoryStore.js';
 
 const menuItems = [
@@ -48,12 +48,15 @@ export default function InventoryPage() {
     let active = true;
     async function loadInventory() {
       try {
-        const [lotsResponse, productsResponse] = await Promise.all([fetch('/api/inventory/lots'), fetch('/api/products')]);
-        if (!lotsResponse.ok || !productsResponse.ok) throw new Error('database_load_failed');
-        const [lotData, productData] = await Promise.all([lotsResponse.json(), productsResponse.json()]);
+        const [lotsResponse, productsResponse, settingsResponse] = await Promise.all([
+          fetch('/api/inventory/lots'), fetch('/api/products'), fetch('/api/settings')
+        ]);
+        if (!lotsResponse.ok || !productsResponse.ok || !settingsResponse.ok) throw new Error('database_load_failed');
+        const [lotData, productData, settingsData] = await Promise.all([lotsResponse.json(), productsResponse.json(), settingsResponse.json()]);
         if (active) {
           setItems(lotData.lots);
           setProducts(productData.products);
+          setInventorySettings(settingsData.settings);
           setLoadError(false);
         }
       } catch {
@@ -63,12 +66,8 @@ export default function InventoryPage() {
       }
     }
     loadInventory();
-    function refreshSettings() { if (active) setInventorySettings(readSettings()); }
-    refreshSettings();
-    window.addEventListener('clinic-settings-updated', refreshSettings);
     return () => {
       active = false;
-      window.removeEventListener('clinic-settings-updated', refreshSettings);
     };
   }, []);
 

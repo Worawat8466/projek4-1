@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { readSales } from '../../src/salesLedger.js';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -86,12 +85,21 @@ function buildTrend(sales, from, to) {
 
 export default function SalesReportsPage() {
   const [sales, setSales] = useState([]);
+  const [dataError, setDataError] = useState('');
   const [period, setPeriod] = useState('month');
   const [customFrom, setCustomFrom] = useState(() => localDateKey(new Date()));
   const [customTo, setCustomTo] = useState(() => localDateKey(new Date()));
 
   useEffect(() => {
-    setSales(readSales());
+    let active = true;
+    fetch('/api/sales')
+      .then((response) => {
+        if (!response.ok) throw new Error('database_unavailable');
+        return response.json();
+      })
+      .then((data) => { if (active) setSales(data.sales); })
+      .catch(() => { if (active) setDataError('โหลดรายงานจากฐานข้อมูลไม่สำเร็จ'); });
+    return () => { active = false; };
   }, []);
 
   const dateRange = useMemo(() => {
@@ -240,7 +248,8 @@ export default function SalesReportsPage() {
           </table></div> : <div className="sales-empty-small">ยังไม่มีบิลขายในช่วงนี้ เมื่อปิดบิลจากหน้าร้าน รายการจะแสดงที่นี่</div>}
         </article>
       </section>
-      <p className="sales-report-note">รายงานคำนวณจากบิลที่บันทึกในเครื่องนี้ · ต้นทุนจะคำนวณได้เมื่อมีราคาทุนในรายการขาย</p>
+      {dataError && <p className="sales-report-note" role="alert">{dataError}</p>}
+      <p className="sales-report-note">รายงานจาก Oracle Database · ต้นทุนอ้างอิงราคาทุนของล็อตที่ขาย</p>
     </main>
   </div>;
 }

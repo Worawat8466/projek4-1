@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createRecoveryCode, createSalt, hashSecret, readLocalAuth, saveLocalAuth } from '../../src/localAuth.js';
-
 function Field({ label, type = 'text', value, onChange, placeholder, autoFocus = false, inputMode }) {
   return <label className="auth-field">{label}<input autoFocus={autoFocus} inputMode={inputMode} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
 }
@@ -20,8 +18,14 @@ export default function LoginPage() {
   const [generatedCode, setGeneratedCode] = useState('');
 
   useEffect(() => {
-    setMode(readLocalAuth() ? 'login' : 'setup');
-    setReady(true);
+    fetch('/api/auth')
+      .then((response) => {
+        if (!response.ok) throw new Error('database_unavailable');
+        return response.json();
+      })
+      .then((status) => setMode(status.needsSetup ? 'setup' : 'login'))
+      .catch(() => setMessage('เชื่อมต่อฐานข้อมูลไม่ได้'))
+      .finally(() => setReady(true));
   }, []);
 
   function showError(text) {
@@ -30,25 +34,19 @@ export default function LoginPage() {
 
   async function handleLogin(event) {
     event.preventDefault();
-    const auth = readLocalAuth();
-    if (!auth) {
-      setMessage('ยังไม่ได้ตั้งค่าเครื่องนี้ กรุณาตั้งค่าก่อนเข้าใช้งาน');
-      setMode('setup');
-      return;
-    }
     if (!username.trim() || !password) {
       showError('กรุณากรอก Username และ Password');
       return;
     }
     try {
-      const passwordHash = await hashSecret(password, auth.salt);
-      if (username.trim() !== auth.username || passwordHash !== auth.passwordHash) {
-        showError('Username หรือ Password ไม่ถูกต้อง');
-        return;
-      }
+      const response = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', email: username.trim(), password })
+      });
+      if (!response.ok) throw new Error('invalid_credentials');
       window.location.href = '/';
-    } catch {
-      showError('ตรวจสอบรหัสผ่านไม่สำเร็จ');
+    } catch (error) {
+      showError(error.message === 'invalid_credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : 'ตรวจสอบบัญชีไม่สำเร็จ');
     }
   }
 
@@ -60,51 +58,33 @@ export default function LoginPage() {
     }
 
     try {
-      const salt = createSalt();
-      const code = createRecoveryCode();
-      const auth = {
-        username: username.trim(),
-        salt,
-        passwordHash: await hashSecret(password, salt),
-        pinHash: await hashSecret(pin, salt),
-        recoveryCodeHash: await hashSecret(code, salt),
-        createdAt: new Date().toISOString()
-      };
-      if (!saveLocalAuth(auth)) throw new Error('Storage unavailable');
-      setGeneratedCode(code);
+      const response = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setup', email: username.trim(), password, pin })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'setup_failed');
+      setGeneratedCode(result.recoveryCode);
       setMessage('');
       setMode('recovery-code');
-    } catch {
-      showError('ตั้งค่าไม่สำเร็จ กรุณาลองอีกครั้ง');
+    } catch (error) {
+      showError(error.message === 'setup_complete' ? 'มีบัญชีผู้ดูแลอยู่แล้ว กรุณาเข้าสู่ระบบ' : 'ตั้งค่าไม่สำเร็จ กรุณาตรวจอีเมลและการเชื่อมต่อฐานข้อมูล');
     }
   }
 
   async function handleRecovery(event) {
     event.preventDefault();
-    const auth = readLocalAuth();
-    if (!auth?.recoveryCodeHash) {
-      showError('Recovery Code ถูกใช้แล้วหรือไม่มีอยู่ กรุณาติดต่อผู้ดูแลระบบ');
-      return;
-    }
     if (newPassword.length < 8 || !/^\d{4,6}$/.test(newPin)) {
       showError('รหัสผ่านใหม่ต้องอย่างน้อย 8 ตัวอักษร และ PIN ใหม่ 4-6 หลัก');
       return;
     }
 
     try {
-      const suppliedHash = await hashSecret(recoveryCode.trim().toUpperCase(), auth.salt);
-      if (suppliedHash !== auth.recoveryCodeHash) {
-        showError('Recovery Code ไม่ถูกต้อง');
-        return;
-      }
-      const updatedAuth = {
-        ...auth,
-        passwordHash: await hashSecret(newPassword, auth.salt),
-        pinHash: await hashSecret(newPin, auth.salt),
-        recoveryCodeHash: null,
-        recoveryUsedAt: new Date().toISOString()
-      };
-      if (!saveLocalAuth(updatedAuth)) throw new Error('Storage unavailable');
+      const response = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recover', email: username.trim(), recoveryCode, password: newPassword, pin: newPin })
+      });
+      if (!response.ok) throw new Error('recovery_failed');
       setMessage('เปลี่ยน Password และ PIN แล้ว กรุณาเข้าสู่ระบบด้วยค่าใหม่');
       setMode('login');
       setPassword('');
@@ -125,7 +105,7 @@ export default function LoginPage() {
       {mode === 'setup' && <>
         <div className="login-heading"><p>FIRST-TIME SETUP</p><h1>ตั้งค่าเครื่องร้าน</h1><span>สร้างบัญชีผู้ดูแลและตั้ง PIN สำหรับเครื่องนี้</span></div>
         <form className="login-form" onSubmit={handleSetup}>
-          <Field autoFocus label="Username" value={username} onChange={setUsername} placeholder="ชื่อผู้ใช้งาน" />
+          <Field autoFocus label="อีเมลผู้ดูแล" value={username} onChange={setUsername} placeholder="admin@example.com" />
           <Field label="Master Password" type="password" value={password} onChange={setPassword} placeholder="อย่างน้อย 8 ตัวอักษร" />
           <Field label="PIN ล็อกหน้าจอ" type="password" inputMode="numeric" value={pin} onChange={(value) => setPin(value.replace(/\D/g, '').slice(0, 6))} placeholder="PIN 4-6 หลัก" />
           {message && <p className="login-error" role="alert">{message}</p>}
@@ -136,7 +116,7 @@ export default function LoginPage() {
       {mode === 'login' && <>
         <div className="login-heading"><p>WELCOME BACK</p><h1>เข้าสู่ระบบ</h1><span>ลงชื่อเข้าใช้ TleClinic POS</span></div>
         <form className="login-form" onSubmit={handleLogin}>
-          <Field autoFocus label="Username" value={username} onChange={setUsername} placeholder="กรอก Username" />
+          <Field autoFocus label="อีเมล" value={username} onChange={setUsername} placeholder="กรอกอีเมล" />
           <Field label="Master Password" type="password" value={password} onChange={setPassword} placeholder="กรอก Password" />
           {message && <p className="login-error" role="status">{message}</p>}
           <button className="login-submit" type="submit">เข้าสู่ระบบ</button>
@@ -145,8 +125,9 @@ export default function LoginPage() {
       </>}
 
       {mode === 'recover' && <>
-        <div className="login-heading"><p>OFFLINE RECOVERY</p><h1>กู้คืนบัญชี</h1><span>ใช้ Recovery Code ที่บันทึกไว้นอกเครื่อง ระบบจะใช้ code นี้ได้ครั้งเดียว</span></div>
+        <div className="login-heading"><p>ACCOUNT RECOVERY</p><h1>กู้คืนบัญชี</h1><span>Recovery Code ใช้ได้ครั้งเดียว</span></div>
         <form className="login-form" onSubmit={handleRecovery}>
+          <Field autoFocus label="อีเมล" value={username} onChange={setUsername} placeholder="อีเมลผู้ดูแล" />
           <Field autoFocus label="Recovery Code" value={recoveryCode} onChange={(value) => setRecoveryCode(value.toUpperCase())} placeholder="TLC-XXXX-XXXX-XXXX" />
           <Field label="Master Password ใหม่" type="password" value={newPassword} onChange={setNewPassword} placeholder="อย่างน้อย 8 ตัวอักษร" />
           <Field label="PIN ใหม่" type="password" inputMode="numeric" value={newPin} onChange={(value) => setNewPin(value.replace(/\D/g, '').slice(0, 6))} placeholder="PIN 4-6 หลัก" />
@@ -161,7 +142,7 @@ export default function LoginPage() {
         <code>{generatedCode}</code>
         <button className="login-submit" type="button" onClick={() => { setGeneratedCode(''); window.location.href = '/'; }}>ฉันบันทึกรหัสแล้ว</button>
       </div>}
-      <p className="login-footer">TleClinic POS <span>•</span> รหัสกู้คืนจัดเก็บเป็น hash ในเครื่องนี้</p>
+      <p className="login-footer">TleClinic POS <span>•</span> บัญชีและ session จัดเก็บในฐานข้อมูลคลินิก</p>
     </section>
   </main>;
 }

@@ -86,18 +86,21 @@ export async function createPurchaseOrder(input) {
     }
     const orderDate = new Date();
     const poNumber = input.poNumber?.trim() || `PO-${orderDate.getFullYear()}-${String(Date.now()).slice(-6)}`;
-    const header = await connection.execute(
+    await connection.execute(
       `INSERT INTO purchase_orders (po_number, supplier_id, status, ordered_at, notes)
-       VALUES (:poNumber, :supplierId, 'ORDERED', SYSTIMESTAMP, :notes)
-       RETURNING purchase_order_id INTO :purchaseOrderId`,
+       VALUES (:poNumber, :supplierId, 'ORDERED', SYSTIMESTAMP, :notes)`,
       {
         poNumber,
         supplierId: supplier.rows[0].SUPPLIER_ID,
-        notes: input.notes?.trim() || null,
-        purchaseOrderId: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT }
+        notes: input.notes?.trim() || null
       }
     );
-    const purchaseOrderId = header.outBinds.purchaseOrderId[0];
+    const header = await connection.execute(
+      'SELECT purchase_order_id FROM purchase_orders WHERE po_number = :poNumber',
+      { poNumber },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const purchaseOrderId = header.rows[0].PURCHASE_ORDER_ID;
     await connection.execute(
       `INSERT INTO purchase_order_items
          (purchase_order_id, product_id, unit_id, quantity_ordered, quantity_received, unit_cost)
@@ -170,13 +173,12 @@ export async function receivePurchaseOrderLine(purchaseOrderId, input) {
         { baseQuantity, inventoryLotId }
       );
     } else {
-      const insertLot = await connection.execute(
+            await connection.execute(
         `INSERT INTO inventory_lots
            (product_id, purchase_order_item_id, lot_number, expiry_date, received_at,
             received_base_quantity, remaining_base_quantity, unit_cost_base)
          VALUES (:productId, :purchaseOrderItemId, :lotNumber, :expiryDate, :receivedAt,
-                 :baseQuantity, :baseQuantity, :unitCostBase)
-         RETURNING inventory_lot_id INTO :inventoryLotId`,
+           :baseQuantity, :baseQuantity, :unitCostBase)`,
         {
           productId: line.PRODUCT_ID,
           purchaseOrderItemId: line.PURCHASE_ORDER_ITEM_ID,
@@ -184,11 +186,16 @@ export async function receivePurchaseOrderLine(purchaseOrderId, input) {
           expiryDate,
           receivedAt: input.receivedAt ? new Date(`${input.receivedAt}T00:00:00`) : new Date(),
           baseQuantity,
-          unitCostBase: Number(line.UNIT_COST) / multiplier,
-          inventoryLotId: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT }
+          unitCostBase: Number(line.UNIT_COST) / multiplier
         }
       );
-      inventoryLotId = insertLot.outBinds.inventoryLotId[0];
+      const insertedLot = await connection.execute(
+        `SELECT inventory_lot_id FROM inventory_lots
+          WHERE product_id = :productId AND lot_number = :lotNumber`,
+        { productId: line.PRODUCT_ID, lotNumber: input.lotNumber.trim() },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      inventoryLotId = insertedLot.rows[0].INVENTORY_LOT_ID;
     }
 
     await connection.execute(

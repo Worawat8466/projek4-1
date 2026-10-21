@@ -91,13 +91,12 @@ export async function receiveInventoryLot(input) {
         { baseQuantity, inventoryLotId }
       );
     } else {
-      const insertResult = await connection.execute(
+            await connection.execute(
         `INSERT INTO inventory_lots
            (product_id, purchase_order_item_id, lot_number, expiry_date, received_at,
             received_base_quantity, remaining_base_quantity, unit_cost_base)
          VALUES (:productId, :purchaseOrderItemId, :lotNumber, :expiryDate, :receivedAt,
-                 :baseQuantity, :baseQuantity, :unitCostBase)
-         RETURNING inventory_lot_id INTO :inventoryLotId`,
+           :baseQuantity, :baseQuantity, :unitCostBase)`,
         {
           productId: product.PRODUCT_ID,
           purchaseOrderItemId: input.purchaseOrderItemId || null,
@@ -105,11 +104,16 @@ export async function receiveInventoryLot(input) {
           expiryDate,
           receivedAt: input.receivedAt ? new Date(`${input.receivedAt}T00:00:00`) : new Date(),
           baseQuantity,
-          unitCostBase: input.unitCostBase == null ? product.BASE_COST : Number(input.unitCostBase),
-          inventoryLotId: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT }
+          unitCostBase: input.unitCostBase == null ? product.BASE_COST : Number(input.unitCostBase)
         }
       );
-      inventoryLotId = insertResult.outBinds.inventoryLotId[0];
+      const insertedLot = await connection.execute(
+        `SELECT inventory_lot_id FROM inventory_lots
+          WHERE product_id = :productId AND lot_number = :lotNumber`,
+        { productId: product.PRODUCT_ID, lotNumber: input.lotNumber.trim() },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      inventoryLotId = insertedLot.rows[0].INVENTORY_LOT_ID;
     }
 
     await connection.execute(

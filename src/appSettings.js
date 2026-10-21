@@ -1,5 +1,3 @@
-export const SETTINGS_STORAGE_KEY = 'tleclinic.settings.v1';
-
 export const themes = [
   { id: 'clinic-green', name: 'คลินิกเขียว', color: '#16a34a', sidebar: '#14532d' },
   { id: 'clinical-blue', name: 'น้ำเงินคลินิก', color: '#2874a6', sidebar: '#183b58' },
@@ -26,35 +24,6 @@ export const defaultSettings = {
   expiryAlertDays: 30,
   themeId: 'clinic-green'
 };
-
-export function readSettings() {
-  if (typeof window === 'undefined') return defaultSettings;
-
-  try {
-    const stored = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!stored) return defaultSettings;
-    const parsed = JSON.parse(stored);
-    const themeExists = themes.some((theme) => theme.id === parsed.themeId);
-    return {
-      ...defaultSettings,
-      ...parsed,
-      paymentMethods: { ...defaultSettings.paymentMethods, ...parsed.paymentMethods },
-      themeId: themeExists ? parsed.themeId : defaultSettings.themeId
-    };
-  } catch {
-    return defaultSettings;
-  }
-}
-
-export function saveSettings(settings) {
-  try {
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    window.dispatchEvent(new Event('clinic-settings-updated'));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export function getThemeColor(themeId) {
   return themes.find((theme) => theme.id === themeId)?.color || themes[0].color;

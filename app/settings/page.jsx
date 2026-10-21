@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { defaultSettings, readSettings, saveSettings, themes } from '../../src/appSettings.js';
+import { defaultSettings, themes } from '../../src/appSettings.js';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -14,11 +14,22 @@ export default function SettingsPage() {
   const [ready, setReady] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState('');
+  const [loadError, setLoadError] = useState('');
   const importInput = useRef(null);
 
   useEffect(() => {
-    setSettings(readSettings());
-    setReady(true);
+    let active = true;
+    fetch('/api/settings')
+      .then((response) => {
+        if (!response.ok) throw new Error('settings_load_failed');
+        return response.json();
+      })
+      .then((data) => {
+        if (active) setSettings(data.settings);
+      })
+      .catch(() => { if (active) setLoadError('โหลดการตั้งค่าจากฐานข้อมูลไม่สำเร็จ'); })
+      .finally(() => { if (active) setReady(true); });
+    return () => { active = false; };
   }, []);
 
   function notify(message) {
@@ -36,17 +47,25 @@ export default function SettingsPage() {
     setDirty(true);
   }
 
-  function saveCurrentSettings() {
+  async function saveCurrentSettings() {
     if (!settings.paymentMethods.cash && !settings.paymentMethods.promptpay) {
       notify('ต้องเปิดช่องทางชำระเงินอย่างน้อยหนึ่งช่องทาง');
       return;
     }
-    if (!saveSettings(settings)) {
-      notify('บันทึกไม่สำเร็จ พื้นที่จัดเก็บใน browser อาจไม่เพียงพอ');
-      return;
+    try {
+      const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      if (!response.ok) throw new Error('settings_save_failed');
+      setDirty(false);
+      setLoadError('');
+      window.dispatchEvent(new Event('clinic-settings-updated'));
+      notify('บันทึกการตั้งค่าในฐานข้อมูลแล้ว');
+    } catch {
+      notify('บันทึกไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
     }
-    setDirty(false);
-    notify('บันทึกการตั้งค่าแล้ว');
   }
 
   function exportSettings() {
@@ -74,10 +93,9 @@ export default function SettingsPage() {
       if (!importedSettings.paymentMethods || typeof importedSettings.paymentMethods !== 'object') {
         throw new Error('Invalid payment settings');
       }
-      if (!saveSettings(importedSettings)) throw new Error('Storage unavailable');
-      setSettings(readSettings());
-      setDirty(false);
-      notify('นำเข้าไฟล์ตั้งค่าแล้ว');
+      setSettings(importedSettings);
+      setDirty(true);
+      notify('นำเข้าค่าแล้ว กดบันทึกเพื่อเขียนลงฐานข้อมูล');
     } catch {
       notify('ไฟล์ไม่ถูกต้อง หรือไม่ใช่ไฟล์ตั้งค่า TleClinic');
     } finally {
@@ -99,6 +117,7 @@ export default function SettingsPage() {
           <button className="settings-save" type="button" onClick={saveCurrentSettings} disabled={!ready || !dirty}>บันทึกการเปลี่ยนแปลง</button>
         </div>
       </header>
+      {loadError && <p role="alert">{loadError}</p>}
 
       <div className="settings-grid">
         <section className="settings-section">
@@ -153,7 +172,7 @@ export default function SettingsPage() {
             <button type="button" onClick={() => importInput.current?.click()}>Import ตั้งค่า</button>
             <input ref={importInput} className="settings-import-input" type="file" accept="application/json,.json" onChange={importSettings} />
           </div>
-          <p className="settings-note">การตั้งค่าจะถูกเก็บใน browser เครื่องนี้ · Export/Import ครอบคลุมเฉพาะการตั้งค่าคลินิก · ระบบรหัสผ่านและ PIN ยังไม่เชื่อมต่อ</p>
+          <p className="settings-note">การตั้งค่าคลินิกบันทึกใน Oracle Database · Export/Import ครอบคลุมเฉพาะการตั้งค่าคลินิก · ระบบรหัสผ่านและ PIN ยังไม่เชื่อมต่อ</p>
         </section>
       </div>
     </main>

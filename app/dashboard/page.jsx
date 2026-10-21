@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { defaultSettings, readSettings } from '../../src/appSettings.js';
-import { getLotStatus, readInventory } from '../../src/inventoryStore.js';
-import { readSales } from '../../src/salesLedger.js';
+import { defaultSettings } from '../../src/appSettings.js';
+import { getLotStatus } from '../../src/inventoryStore.js';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -88,22 +87,28 @@ export default function DashboardPage() {
   const [sales, setSales] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [settings, setSettings] = useState(defaultSettings);
+  const [dataError, setDataError] = useState('');
 
   useEffect(() => {
-    function refreshData() {
-      setSales(readSales());
-      setInventory(readInventory());
-      setSettings(readSettings());
+    let active = true;
+    async function refreshData() {
+      try {
+        const [salesResponse, inventoryResponse, settingsResponse] = await Promise.all([
+          fetch('/api/sales'), fetch('/api/inventory/lots'), fetch('/api/settings')
+        ]);
+        if (!salesResponse.ok || !inventoryResponse.ok || !settingsResponse.ok) throw new Error('database_unavailable');
+        const [salesData, inventoryData, settingsData] = await Promise.all([salesResponse.json(), inventoryResponse.json(), settingsResponse.json()]);
+        if (!active) return;
+        setSales(salesData.sales);
+        setInventory(inventoryData.lots);
+        setSettings(settingsData.settings);
+        setDataError('');
+      } catch {
+        if (active) setDataError('โหลดข้อมูลจากฐานข้อมูลไม่สำเร็จ');
+      }
     }
     refreshData();
-    window.addEventListener('clinic-settings-updated', refreshData);
-    window.addEventListener('clinic-inventory-updated', refreshData);
-    window.addEventListener('storage', refreshData);
-    return () => {
-      window.removeEventListener('clinic-settings-updated', refreshData);
-      window.removeEventListener('clinic-inventory-updated', refreshData);
-      window.removeEventListener('storage', refreshData);
-    };
+    return () => { active = false; };
   }, []);
 
   const range = useMemo(() => getRange(period), [period]);
@@ -142,6 +147,7 @@ export default function DashboardPage() {
     </aside>
 
     <main className="dashboard-main">
+      {dataError && <p role="alert">{dataError}</p>}
       <header className="dashboard-header">
         <div><p>ภาพรวมคลินิก</p><h1>Dashboard</h1><span>{dateLabel(new Date(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span></div>
         <a href="/" className="dashboard-pos-link">เปิดหน้าขาย <span aria-hidden="true">↗</span></a>
