@@ -171,7 +171,7 @@ export async function createSale(input) {
   });
 }
 
-export async function listSales() {
+export async function listSales(customerCode = null) {
   return withOracleConnection(async (connection) => {
     const result = await connection.execute(
       `SELECT s.sale_id, s.receipt_number, s.sold_at, s.status, s.subtotal, s.discount_amount,
@@ -184,7 +184,9 @@ export async function listSales() {
          LEFT JOIN sale_items si ON si.sale_id = s.sale_id
          LEFT JOIN products p ON p.product_id = si.product_id
          LEFT JOIN pets pet ON pet.pet_id = si.pet_id
-        ORDER BY s.sold_at DESC, s.sale_id DESC`, [], objectRows
+        ${customerCode ? 'WHERE c.customer_code = :customerCode' : ''}
+        ORDER BY s.sold_at DESC, s.sale_id DESC`,
+      customerCode ? { customerCode } : [], objectRows
     );
     const sales = new Map();
     for (const row of result.rows) {

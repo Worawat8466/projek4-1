@@ -42,6 +42,9 @@ export default function CustomersPage() {
   const [form, setForm] = useState({ name: '', surname: '', phone: '' });
   const [photoFile, setPhotoFile] = useState(null);
   const [historyQuery, setHistoryQuery] = useState('');
+  const [historySales, setHistorySales] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
 
   useEffect(() => {
     fetch('/api/customers')
@@ -119,7 +122,30 @@ export default function CustomersPage() {
 
   function openHistoryModal(customer) {
     setHistoryQuery('');
+    setHistorySales([]);
+    setHistoryError('');
+    setHistoryLoading(true);
     setModal({ type: 'history', customer });
+    fetch(`/api/sales?customerCode=${encodeURIComponent(customer.id)}`)
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'history_load_failed');
+        setHistorySales(result.sales.map((sale) => {
+          const items = sale.items || [];
+          const petNames = [...new Set(items.map((item) => item.petName).filter(Boolean))];
+          return {
+            date: new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(new Date(sale.soldAt)),
+            bill: sale.id,
+            pet: petNames.join(', ') || '-',
+            summary: items.map((item) => item.name).join('\n'),
+            quantity: items.map((item) => `${item.quantity} ${item.unitName || ''}`.trim()).join('\n'),
+            total: `฿${Number(sale.total || 0).toLocaleString('th-TH')}`,
+            method: sale.paymentMethod || '-'
+          };
+        }));
+      })
+      .catch(() => setHistoryError('โหลดประวัติการขายจากฐานข้อมูลไม่สำเร็จ'))
+      .finally(() => setHistoryLoading(false));
   }
 
   async function confirmDelete() {
@@ -165,7 +191,7 @@ export default function CustomersPage() {
         </section>
       </main>
       {toast && <div className="toast"><b>OK</b>{toast}</div>}
-      {modal?.type !== 'delete' && modal && <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}>
+      {(modal?.type === 'add' || modal?.type === 'edit') && <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}>
         <form className="customer-modal customer-form-modal" onSubmit={saveCustomer}>
           <button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button>
           <h2>{modal.type === 'edit' ? 'แก้ไข' : 'เพิ่มลูกค้า'}</h2>
@@ -189,7 +215,7 @@ export default function CustomersPage() {
           <button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button>
           <div className="history-heading"><div><h2>ประวัติ:{modal.customer.name}</h2><p>เลขที่ลูกค้า <b>{modal.customer.id}</b></p></div></div>
           <label className="history-search"><SearchIcon /><input value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="เลขที่บิล..." /></label>
-          <div className="history-table-wrap"><table className="history-table"><thead><tr><th>วันที่</th><th>เลขที่บิล</th><th>สัตว์เลี้ยง</th><th>สรุปรายการ</th><th>จำนวน</th><th>ยอดชำระ</th><th>ช่องทาง</th></tr></thead><tbody>{(modal.customer.history || []).filter((entry) => entry.date.includes(historyQuery) || entry.bill.includes(historyQuery)).map((entry) => <tr key={entry.bill}><td>{entry.date}</td><td className="mono">{entry.bill}</td><td>{entry.pet}</td><td>{entry.summary.split('\n').map((line) => <div key={line}>{line}</div>)}</td><td>{entry.quantity.split('\n').map((line) => <div key={line}>{line}</div>)}</td><td>{entry.total}</td><td>{entry.method}</td></tr>)}</tbody></table>{(modal.customer.history || []).length === 0 && <div className="customer-empty">ยังไม่มีประวัติการใช้บริการ</div>}</div>
+          <div className="history-table-wrap"><table className="history-table"><thead><tr><th>วันที่</th><th>เลขที่บิล</th><th>สัตว์เลี้ยง</th><th>สรุปรายการ</th><th>จำนวน</th><th>ยอดชำระ</th><th>ช่องทาง</th></tr></thead><tbody>{historySales.filter((entry) => entry.date.includes(historyQuery) || entry.bill.toLowerCase().includes(historyQuery.toLowerCase())).map((entry) => <tr key={entry.bill}><td>{entry.date}</td><td className="mono">{entry.bill}</td><td>{entry.pet}</td><td>{entry.summary.split('\n').map((line) => <div key={line}>{line}</div>)}</td><td>{entry.quantity.split('\n').map((line) => <div key={line}>{line}</div>)}</td><td>{entry.total}</td><td>{entry.method}</td></tr>)}</tbody></table>{historyLoading ? <div className="customer-empty">กำลังโหลดประวัติการขาย...</div> : historyError ? <div className="customer-empty" role="alert">{historyError}</div> : historySales.length === 0 && <div className="customer-empty">ยังไม่มีประวัติการใช้บริการ</div>}</div>
         </section>
       </div>}
     </div>

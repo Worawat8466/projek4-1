@@ -3,8 +3,11 @@ import { databaseErrorResponse } from '../../../src/server/apiErrors.js';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
-  try { return Response.json({ sales: await listSales() }); }
+export async function GET(request) {
+  try {
+    const customerCode = new URL(request.url).searchParams.get('customerCode');
+    return Response.json({ sales: await listSales(customerCode || null) });
+  }
   catch (error) { return databaseErrorResponse(error); }
 }
 
