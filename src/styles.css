@@ -156,11 +156,12 @@ body {
   border-radius: 50%;
   object-fit: cover;
 }
-.active-pet span,
-.pet-menu span {
+.active-pet > span:not(.pet-avatar-placeholder),
+.pet-menu button > span:not(.pet-avatar-placeholder) {
   display: grid;
   gap: 1px;
   flex: 1;
+  min-width: 0;
 }
 .active-pet b,
 .pet-menu b {
@@ -205,6 +206,8 @@ body {
   width: 38px;
   height: 38px;
 }
+.active-pet > .pet-avatar-placeholder { width: 42px; height: 42px; flex: 0 0 42px; }
+.pet-menu .pet-avatar-placeholder { width: 38px; height: 38px; flex: 0 0 38px; font-size: 14px; }
 .catalog-table-wrap {
   flex: 1;
   min-height: 0;
@@ -1470,6 +1473,7 @@ body {
   display: grid;
   flex-shrink: 0;
   place-items: center;
+  overflow: hidden;
   border-radius: 50%;
   background: #d7e8ed;
   color: #486273;
