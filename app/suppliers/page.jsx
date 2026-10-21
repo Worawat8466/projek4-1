@@ -1,17 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
   ['สินค้า', '/products'], ['คลังสินค้า', '/inventory'], ['สั่งซื้อสินค้า', '/purchase-orders'],
   ['ผู้จัดจำหน่าย', '/suppliers'], ['สรุปยอดขาย', '/sales-reports'], ['จัดการพนักงาน', '/employees'], ['ตั้งค่า', '/settings']
-];
-
-const initialSuppliers = [
-  { id: 'SUP-001', name: 'บริษัท เพ็ทแคร์ (ประเทศไทย) จำกัด', contact: 'คุณสมบัติ', phone: '081-222-3333', email: 'orders@petcare.co.th', active: true },
-  { id: 'SUP-002', name: 'บริษัท โรยัล คานิน (Royal Canin)', contact: 'คุณวิภาดา', phone: '082-131-4444', email: 'clinic@royalcanin.co.th', active: true },
-  { id: 'SUP-003', name: 'บริษัท เพอร์เฟค คอมพาเนียน กรุ๊ป จำกัด (PCG)', contact: 'คุณสมจร', phone: '083-666-7777', email: 'sales@pcg.co.th', active: false }
 ];
 
 const emptyForm = { name: '', contact: '', phone: '', email: '', active: true };
@@ -29,11 +23,23 @@ function DeleteIcon() {
 }
 
 export default function SuppliersPage() {
-  const [suppliers, setSuppliers] = useState(initialSuppliers);
+  const [suppliers, setSuppliers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    fetch('/api/suppliers')
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'load_failed');
+        setSuppliers(result.suppliers);
+      })
+      .catch(() => notify('โหลดผู้จัดจำหน่ายจากฐานข้อมูลไม่สำเร็จ'))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredSuppliers = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -58,7 +64,7 @@ export default function SuppliersPage() {
     setModal({ type: 'edit', supplier });
   }
 
-  function saveSupplier(event) {
+  async function saveSupplier(event) {
     event.preventDefault();
     const supplierData = {
       ...form,
@@ -68,25 +74,33 @@ export default function SuppliersPage() {
       email: form.email.trim()
     };
 
-    if (modal.type === 'edit') {
-      setSuppliers((current) => current.map((supplier) =>
-        supplier.id === modal.supplier.id ? { ...supplier, ...supplierData } : supplier
-      ));
-      notify('บันทึกการแก้ไขผู้จัดจำหน่ายแล้ว');
-    } else {
-      setSuppliers((current) => [
-        ...current,
-        { id: `SUP-${String(Date.now()).slice(-6)}`, ...supplierData }
-      ]);
-      notify('เพิ่มผู้จัดจำหน่ายแล้ว');
+    try {
+      const response = await fetch(modal.type === 'edit' ? `/api/suppliers/${encodeURIComponent(modal.supplier.id)}` : '/api/suppliers', {
+        method: modal.type === 'edit' ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(supplierData)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'save_failed');
+      if (modal.type === 'edit') setSuppliers((current) => current.map((supplier) => supplier.id === modal.supplier.id ? result.supplier : supplier));
+      else setSuppliers((current) => [...current, result.supplier]);
+      notify(modal.type === 'edit' ? 'บันทึกการแก้ไขผู้จัดจำหน่ายแล้ว' : 'เพิ่มผู้จัดจำหน่ายแล้ว');
+      setModal(null);
+    } catch {
+      notify('บันทึกผู้จัดจำหน่ายไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
     }
-    setModal(null);
   }
 
-  function confirmDelete() {
-    setSuppliers((current) => current.filter((supplier) => supplier.id !== modal.supplier.id));
-    notify(`ลบ ${modal.supplier.name} แล้ว`);
-    setModal(null);
+  async function confirmDelete() {
+    try {
+      const response = await fetch(`/api/suppliers/${encodeURIComponent(modal.supplier.id)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('delete_failed');
+      setSuppliers((current) => current.map((supplier) => supplier.id === modal.supplier.id ? { ...supplier, active: false } : supplier));
+      notify(`ปิดใช้งาน ${modal.supplier.name} แล้ว`);
+      setModal(null);
+    } catch {
+      notify('ปิดใช้งานผู้จัดจำหน่ายไม่สำเร็จ');
+    }
   }
 
   return <div className="suppliers-page">
@@ -120,7 +134,7 @@ export default function SuppliersPage() {
             </div></td>
           </tr>)}</tbody>
         </table>
-        {filteredSuppliers.length === 0 && <div className="supplier-empty">ไม่พบผู้จัดจำหน่ายที่ค้นหา</div>}
+        {loading ? <div className="supplier-empty">กำลังโหลดผู้จัดจำหน่าย...</div> : filteredSuppliers.length === 0 && <div className="supplier-empty">{query ? 'ไม่พบผู้จัดจำหน่ายที่ค้นหา' : 'ยังไม่มีผู้จัดจำหน่ายในฐานข้อมูล'}</div>}
       </section>
     </main>
 

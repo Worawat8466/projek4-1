@@ -33,6 +33,7 @@ CREATE TABLE customers (
   phone VARCHAR2(30),
   email VARCHAR2(254),
   address VARCHAR2(1000),
+  is_active CHAR(1) DEFAULT 'Y' NOT NULL CHECK (is_active IN ('Y', 'N')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
 );
@@ -47,6 +48,7 @@ CREATE TABLE pets (
   birth_date DATE,
   chip_number VARCHAR2(80) UNIQUE,
   notes VARCHAR2(2000),
+  is_active CHAR(1) DEFAULT 'Y' NOT NULL CHECK (is_active IN ('Y', 'N')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
 );
@@ -68,7 +70,7 @@ CREATE TABLE products (
   product_type VARCHAR2(20) NOT NULL CHECK (product_type IN ('PRODUCT', 'SERVICE')),
   base_unit VARCHAR2(40) NOT NULL,
   base_sale_price NUMBER(12, 2) DEFAULT 0 NOT NULL CHECK (base_sale_price >= 0),
-  base_cost NUMBER(12, 4) DEFAULT 0 NOT NULL CHECK (base_cost >= 0),
+  base_cost NUMBER(12, 4) CHECK (base_cost >= 0),
   min_stock NUMBER(14, 3) DEFAULT 0 NOT NULL CHECK (min_stock >= 0),
   tracks_stock CHAR(1) DEFAULT 'Y' NOT NULL CHECK (tracks_stock IN ('Y', 'N')),
   is_active CHAR(1) DEFAULT 'Y' NOT NULL CHECK (is_active IN ('Y', 'N')),
@@ -132,7 +134,7 @@ CREATE TABLE inventory_lots (
   received_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
   received_base_quantity NUMBER(14, 3) NOT NULL CHECK (received_base_quantity >= 0),
   remaining_base_quantity NUMBER(14, 3) NOT NULL CHECK (remaining_base_quantity >= 0),
-  unit_cost_base NUMBER(12, 4) NOT NULL CHECK (unit_cost_base >= 0),
+  unit_cost_base NUMBER(12, 4) CHECK (unit_cost_base >= 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT uq_product_lot UNIQUE (product_id, lot_number)
 );
@@ -174,7 +176,7 @@ CREATE TABLE sale_lot_allocations (
   sale_item_id NUMBER NOT NULL REFERENCES sale_items(sale_item_id),
   inventory_lot_id NUMBER NOT NULL REFERENCES inventory_lots(inventory_lot_id),
   base_quantity NUMBER(14, 3) NOT NULL CHECK (base_quantity > 0),
-  unit_cost_snapshot NUMBER(12, 4) NOT NULL CHECK (unit_cost_snapshot >= 0),
+  unit_cost_snapshot NUMBER(12, 4) CHECK (unit_cost_snapshot >= 0),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL
 );
 

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { defaultProducts, readProducts, saveProducts } from '../../src/productStore.js';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -27,7 +26,8 @@ function DeleteIcon() {
 }
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState(defaultProducts);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false);
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState(null);
@@ -35,13 +35,18 @@ export default function ProductsPage() {
   const [toast, setToast] = useState('');
 
   useEffect(() => {
-    setProducts(readProducts());
-    setReady(true);
+    let active = true;
+    fetch('/api/products')
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'load_failed');
+        return result.products;
+      })
+      .then((rows) => { if (active) setProducts(rows); })
+      .catch(() => { if (active) notify('โหลดข้อมูลสินค้าจากฐานข้อมูลไม่สำเร็จ'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    if (ready) saveProducts(products);
-  }, [products, ready]);
 
   const filteredProducts = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -76,7 +81,7 @@ export default function ProductsPage() {
     setModal({ type: 'edit', product });
   }
 
-  function saveProduct(event) {
+  async function saveProduct(event) {
     event.preventDefault();
     if (!form.id.trim() || !form.name.trim() || !form.salePrice || !form.baseUnit.trim() || !form.packUnit.trim()) {
       notify('กรุณากรอกรหัส ชื่อ หน่วย และราคาขาย');
@@ -98,27 +103,41 @@ export default function ProductsPage() {
       salePrice: Number(form.salePrice),
       costPrice: isStockItem ? (form.costPrice === '' ? null : Number(form.costPrice)) : null,
       minimumStock: isStockItem ? Number(form.minimumStock) || 0 : 0,
-      tracksStock: isStockItem
+      tracksStock: isStockItem,
+      barcode: form.id.trim()
     };
 
-    if (modal.type === 'edit') {
-      setProducts((current) => current.map((product) => product.id === modal.product.id ? data : product));
-      notify('แก้ไขสินค้าแล้ว');
-    } else {
-      if (products.some((product) => product.id === data.id)) {
-        notify('รหัสสินค้านี้มีอยู่แล้ว');
-        return;
+    try {
+      const response = await fetch(modal.type === 'edit' ? `/api/products/${encodeURIComponent(modal.product.id)}` : '/api/products', {
+        method: modal.type === 'edit' ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'save_failed');
+      if (modal.type === 'edit') {
+        setProducts((current) => current.map((product) => product.id === modal.product.id ? result.product : product));
+        notify('แก้ไขสินค้าแล้ว');
+      } else {
+        setProducts((current) => [...current, result.product]);
+        notify('เพิ่มสินค้าแล้ว');
       }
-      setProducts((current) => [...current, data]);
-      notify('เพิ่มสินค้าแล้ว');
+      setModal(null);
+    } catch (error) {
+      notify(error.message === 'product_code_or_barcode_exists' ? 'รหัสสินค้าหรือบาร์โค้ดนี้มีอยู่แล้ว' : 'บันทึกสินค้าไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
     }
-    setModal(null);
   }
 
-  function confirmDelete() {
-    setProducts((current) => current.filter((product) => product.id !== modal.product.id));
-    notify(`ลบ ${modal.product.name} แล้ว`);
-    setModal(null);
+  async function confirmDelete() {
+    try {
+      const response = await fetch(`/api/products/${encodeURIComponent(modal.product.id)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('delete_failed');
+      setProducts((current) => current.filter((product) => product.id !== modal.product.id));
+      notify(`ปิดใช้งาน ${modal.product.name} แล้ว`);
+      setModal(null);
+    } catch {
+      notify('ลบสินค้าไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
+    }
   }
 
   return <div className="products-page">
@@ -145,7 +164,7 @@ export default function ProductsPage() {
             <td><div className="customer-row-actions"><button className="edit-action" type="button" aria-label={`แก้ไข ${product.name}`} title="แก้ไข" onClick={() => openEdit(product)}><EditIcon /></button><button className="delete-action" type="button" aria-label={`ลบ ${product.name}`} title="ลบ" onClick={() => setModal({ type: 'delete', product })}><DeleteIcon /></button></div></td>
           </tr>)}</tbody>
         </table>
-        {filteredProducts.length === 0 && <div className="customer-empty">ไม่พบสินค้า</div>}
+        {loading ? <div className="customer-empty">กำลังโหลดสินค้า...</div> : filteredProducts.length === 0 && <div className="customer-empty">{query ? 'ไม่พบสินค้าที่ค้นหา' : 'ยังไม่มีสินค้าในฐานข้อมูล · เพิ่มสินค้าเพื่อเริ่มใช้งาน'}</div>}
       </section>
     </main>
 

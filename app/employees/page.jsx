@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -9,11 +9,7 @@ const menuItems = [
 ];
 
 const roles = ['ผู้ดูแลระบบ', 'สัตวแพทย์', 'ผู้ช่วย', 'พนักงานหน้าร้าน'];
-const initialEmployees = [
-  { id: 'EMP-001', name: 'ณัชพัฒน์ รังษา', role: 'สัตวแพทย์', email: 'natchapat@vpclinic.com', phone: '081-222-3333' },
-  { id: 'EMP-002', name: 'วรวรรษ ห้องจำปา', role: 'ผู้ช่วย', email: 'worawat@vpclinic.com', phone: '082-131-4444' }
-];
-
+const roleCodes = { 'ผู้ดูแลระบบ': 'ADMIN', 'สัตวแพทย์': 'VET', 'ผู้ช่วย': 'ASSISTANT', 'พนักงานหน้าร้าน': 'CASHIER' };
 const emptyForm = { firstName: '', lastName: '', role: '', email: '', phone: '' };
 
 function SearchIcon() {
@@ -29,11 +25,23 @@ function DeleteIcon() {
 }
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState(initialEmployees);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    fetch('/api/staff')
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'load_failed');
+        setEmployees(result.staff);
+      })
+      .catch(() => notify('โหลดพนักงานจากฐานข้อมูลไม่สำเร็จ'))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredEmployees = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -59,34 +67,43 @@ export default function EmployeesPage() {
     setModal({ type: 'edit', employee });
   }
 
-  function saveEmployee(event) {
+  async function saveEmployee(event) {
     event.preventDefault();
     const employeeData = {
-      name: `${form.firstName.trim()} ${form.lastName.trim()}`.trim(),
-      role: form.role,
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      roleCode: roleCodes[form.role] || form.role,
       email: form.email.trim(),
       phone: form.phone.trim()
     };
 
-    if (modal.type === 'edit') {
-      setEmployees((current) => current.map((employee) =>
-        employee.id === modal.employee.id ? { ...employee, ...employeeData } : employee
-      ));
-      notify('บันทึกการแก้ไขพนักงานแล้ว');
-    } else {
-      setEmployees((current) => [
-        ...current,
-        { id: `EMP-${String(Date.now()).slice(-6)}`, ...employeeData }
-      ]);
-      notify('เพิ่มพนักงานแล้ว');
+    try {
+      const response = await fetch(modal.type === 'edit' ? `/api/staff/${modal.employee.id}` : '/api/staff', {
+        method: modal.type === 'edit' ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(employeeData)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'save_failed');
+      if (modal.type === 'edit') setEmployees((current) => current.map((employee) => employee.id === modal.employee.id ? result.staff : employee));
+      else setEmployees((current) => [...current, result.staff]);
+      notify(modal.type === 'edit' ? 'บันทึกการแก้ไขพนักงานแล้ว' : 'เพิ่มพนักงานแล้ว');
+      setModal(null);
+    } catch (error) {
+      notify(error.message === 'duplicate_value' ? 'อีเมลนี้ถูกใช้งานแล้ว' : 'บันทึกพนักงานไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
     }
-    setModal(null);
   }
 
-  function confirmDelete() {
-    setEmployees((current) => current.filter((employee) => employee.id !== modal.employee.id));
-    notify(`ลบข้อมูล ${modal.employee.name} แล้ว`);
-    setModal(null);
+  async function confirmDelete() {
+    try {
+      const response = await fetch(`/api/staff/${modal.employee.id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('delete_failed');
+      setEmployees((current) => current.filter((employee) => employee.id !== modal.employee.id));
+      notify(`ปิดใช้งาน ${modal.employee.name} แล้ว`);
+      setModal(null);
+    } catch {
+      notify('ปิดใช้งานพนักงานไม่สำเร็จ');
+    }
   }
 
   return <div className="employees-page">
@@ -120,7 +137,7 @@ export default function EmployeesPage() {
             </div></td>
           </tr>)}</tbody>
         </table>
-        {filteredEmployees.length === 0 && <div className="employee-empty">ไม่พบพนักงานที่ค้นหา</div>}
+        {loading ? <div className="employee-empty">กำลังโหลดพนักงาน...</div> : filteredEmployees.length === 0 && <div className="employee-empty">{query ? 'ไม่พบพนักงานที่ค้นหา' : 'ยังไม่มีพนักงานในฐานข้อมูล'}</div>}
       </section>
     </main>
 

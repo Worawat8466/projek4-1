@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const menuItems = [
   ['Dashboard', '/dashboard'],
@@ -14,11 +14,6 @@ const menuItems = [
   ['สรุปยอดขาย', '/sales-reports'],
   ['จัดการพนักงาน', '/employees'],
   ['ตั้งค่า', '/settings']
-];
-
-const initialCustomers = [
-  { id: '123456', name: 'แมว1', phone: '082-666-7777', pets: 67, joined: '13/07/2569', history: [{ date: '19/11/2011', bill: '123456', pet: 'แมวน้ำ', summary: 'ยาพารา\nถ่ายพยาธิ', quantity: '12\n-', total: '300', method: 'เงินสด' }] },
-  { id: '654321', name: 'แมว2', phone: '080-555-7777', pets: 2, joined: '25/8/2569', history: [] }
 ];
 
 function SearchIcon() {
@@ -38,12 +33,24 @@ function HistoryIcon() {
 }
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState(initialCustomers);
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ name: '', surname: '', phone: '' });
   const [historyQuery, setHistoryQuery] = useState('');
+
+  useEffect(() => {
+    fetch('/api/customers')
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'load_failed');
+        setCustomers(result.customers);
+      })
+      .catch(() => notify('โหลดลูกค้าจากฐานข้อมูลไม่สำเร็จ'))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredCustomers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -69,26 +76,29 @@ export default function CustomersPage() {
     setModal({ type: 'edit', customer });
   }
 
-  function saveCustomer(event) {
+  async function saveCustomer(event) {
     event.preventDefault();
     if (!form.name.trim() || !form.phone.trim()) {
       notify('กรุณากรอกชื่อและเบอร์โทร');
       return;
     }
 
-    const fullName = `${form.name.trim()} ${form.surname.trim()}`.trim();
-    if (modal.type === 'edit') {
-      setCustomers((current) => current.map((customer) => customer.id === modal.customer.id ? { ...customer, name: fullName, phone: form.phone.trim() } : customer));
-      notify('แก้ไขข้อมูลลูกค้าแล้ว');
-    } else {
-    const nextNumber = customers.length + 1;
-    setCustomers((current) => [
-      ...current,
-      { id: `NEW${String(nextNumber).padStart(3, '0')}`, name: fullName, phone: form.phone.trim(), pets: 0, joined: '25/8/2569', history: [] }
-    ]);
-    notify('เพิ่มลูกค้าใหม่แล้ว');
+    const customerData = { firstName: form.name.trim(), lastName: form.surname.trim(), phone: form.phone.trim() };
+    try {
+      const response = await fetch(modal.type === 'edit' ? `/api/customers/${encodeURIComponent(modal.customer.id)}` : '/api/customers', {
+        method: modal.type === 'edit' ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customerData)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'save_failed');
+      if (modal.type === 'edit') setCustomers((current) => current.map((customer) => customer.id === modal.customer.id ? result.customer : customer));
+      else setCustomers((current) => [...current, result.customer]);
+      notify(modal.type === 'edit' ? 'แก้ไขข้อมูลลูกค้าแล้ว' : 'เพิ่มลูกค้าใหม่แล้ว');
+      setModal(null);
+    } catch {
+      notify('บันทึกลูกค้าไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
     }
-    setModal(null);
   }
 
   function deleteCustomer(customer) {
@@ -100,11 +110,17 @@ export default function CustomersPage() {
     setModal({ type: 'history', customer });
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     const customer = modal.customer;
-    setCustomers((current) => current.filter((item) => item.id !== customer.id));
-    notify(`ลบข้อมูล ${customer.name} แล้ว`);
-    setModal(null);
+    try {
+      const response = await fetch(`/api/customers/${encodeURIComponent(customer.id)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('delete_failed');
+      setCustomers((current) => current.filter((item) => item.id !== customer.id));
+      notify(`ปิดใช้งานข้อมูล ${customer.name} แล้ว`);
+      setModal(null);
+    } catch {
+      notify('ปิดใช้งานลูกค้าไม่สำเร็จ');
+    }
   }
 
   return (
@@ -127,13 +143,13 @@ export default function CustomersPage() {
             <thead><tr><th>ชื่อลูกค้า</th><th>ไอดี</th><th>ติดต่อ</th><th>สัตว์เลี้ยง</th><th>วันที่สมัคร</th><th>ประวัติ</th><th>จัดการ</th></tr></thead>
             <tbody>
               {filteredCustomers.map((customer) => <tr key={customer.id}>
-                <td>{customer.name}</td><td className="mono">{customer.id}</td><td className="mono">{customer.phone}</td><td>{customer.pets}</td><td>{customer.joined}</td>
+                <td>{customer.name}</td><td className="mono">{customer.id}</td><td className="mono">{customer.phone || '-'}</td><td>{customer.petCount || 0}</td><td>{customer.createdAt ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(new Date(customer.createdAt)) : '-'}</td>
                 <td><button className="history-action" aria-label={`ดูประวัติ ${customer.name}`} title="ดูประวัติ" onClick={() => openHistoryModal(customer)}><HistoryIcon /></button></td>
                 <td><div className="customer-row-actions"><button className="edit-action" aria-label={`แก้ไข ${customer.name}`} title="แก้ไข" onClick={() => openEditModal(customer)}><EditIcon /></button><button className="delete-action" aria-label={`ลบ ${customer.name}`} title="ลบ" onClick={() => deleteCustomer(customer)}><DeleteIcon /></button></div></td>
               </tr>)}
             </tbody>
           </table>
-          {filteredCustomers.length === 0 && <div className="customer-empty">ไม่พบข้อมูลลูกค้า</div>}
+          {!loading && filteredCustomers.length === 0 && <div className="customer-empty">{query ? 'ไม่พบข้อมูลลูกค้า' : 'ยังไม่มีลูกค้าในฐานข้อมูล'}</div>}
         </section>
       </main>
       {toast && <div className="toast"><b>OK</b>{toast}</div>}

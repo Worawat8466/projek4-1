@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings, readSettings } from '../../src/appSettings.js';
-import { defaultInventory, getLotStatus, readInventory } from '../../src/inventoryStore.js';
-import { commitInventoryMovement } from '../../src/inventoryMovements.js';
-import { defaultProducts, readProducts } from '../../src/productStore.js';
+import { getLotStatus } from '../../src/inventoryStore.js';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -35,8 +33,10 @@ function displayDate(value) {
 }
 
 export default function InventoryPage() {
-  const [items, setItems] = useState(defaultInventory);
-  const [products, setProducts] = useState(defaultProducts);
+  const [items, setItems] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState(null);
   const [receiveForm, setReceiveForm] = useState(emptyReceiveForm);
@@ -45,20 +45,30 @@ export default function InventoryPage() {
   const [inventorySettings, setInventorySettings] = useState(defaultSettings);
 
   useEffect(() => {
-    setItems(readInventory());
-    setProducts(readProducts());
-    setInventorySettings(readSettings());
-    function refreshSharedData() {
-      setProducts(readProducts());
-      setInventorySettings(readSettings());
+    let active = true;
+    async function loadInventory() {
+      try {
+        const [lotsResponse, productsResponse] = await Promise.all([fetch('/api/inventory/lots'), fetch('/api/products')]);
+        if (!lotsResponse.ok || !productsResponse.ok) throw new Error('database_load_failed');
+        const [lotData, productData] = await Promise.all([lotsResponse.json(), productsResponse.json()]);
+        if (active) {
+          setItems(lotData.lots);
+          setProducts(productData.products);
+          setLoadError(false);
+        }
+      } catch {
+        if (active) setLoadError(true);
+      } finally {
+        if (active) setLoading(false);
+      }
     }
-    window.addEventListener('clinic-settings-updated', refreshSharedData);
-    window.addEventListener('clinic-products-updated', refreshSharedData);
-    window.addEventListener('storage', refreshSharedData);
+    loadInventory();
+    function refreshSettings() { if (active) setInventorySettings(readSettings()); }
+    refreshSettings();
+    window.addEventListener('clinic-settings-updated', refreshSettings);
     return () => {
-      window.removeEventListener('clinic-settings-updated', refreshSharedData);
-      window.removeEventListener('clinic-products-updated', refreshSharedData);
-      window.removeEventListener('storage', refreshSharedData);
+      active = false;
+      window.removeEventListener('clinic-settings-updated', refreshSettings);
     };
   }, []);
 
@@ -83,54 +93,35 @@ export default function InventoryPage() {
     setModal({ type: 'receive' });
   }
 
-  function receiveStock(event) {
+  async function receiveStock(event) {
     event.preventDefault();
     if (!selectedProduct || !receiveForm.batch.trim() || !receiveForm.expiry || !Number(receiveForm.packQuantity) || Number(receiveForm.packQuantity) < 1) {
       notify('กรุณาระบุสินค้า จำนวน ล็อต และวันหมดอายุ');
       return;
     }
 
-    const duplicateLot = items.find((item) => item.id === selectedProduct.id && item.batch.trim().toLowerCase() === receiveForm.batch.trim().toLowerCase());
-    const receivedAt = new Date(`${receiveForm.received || new Date().toISOString().slice(0, 10)}T00:00:00`).toISOString();
-    const lot = duplicateLot
-      ? { ...duplicateLot, units: Number(duplicateLot.units) + receivedBaseQuantity, packs: Number(duplicateLot.packs || 0) + Number(receiveForm.packQuantity) }
-      : {
-        id: selectedProduct.id,
-        productId: selectedProduct.id,
-        name: selectedProduct.name,
-        batch: receiveForm.batch.trim(),
-        expiry: receiveForm.expiry,
-        received: receiveForm.received,
-        receivedAt,
-        units: receivedBaseQuantity,
-        packs: Number(receiveForm.packQuantity),
-        baseUnit: selectedProduct.baseUnit,
-        packUnit: selectedProduct.packUnit,
-        multiplier,
-        unitCostBase: selectedProduct.costPrice ?? null,
-        status: 'ปกติ'
-      };
-    const nextItems = duplicateLot
-      ? items.map((item) => item.id === duplicateLot.id && item.batch === duplicateLot.batch ? lot : item)
-      : [...items, lot];
-
-    const movementSaved = commitInventoryMovement(nextItems, {
-      productId: selectedProduct.id,
-      batch: lot.batch,
-      movementType: 'RECEIVE',
-      packQuantity: Number(receiveForm.packQuantity),
-      packUnit: selectedProduct.packUnit,
-      multiplier,
-      baseQuantity: receivedBaseQuantity,
-      reason: 'รับสินค้าจากคลัง/ผู้จัดจำหน่าย'
-    });
-    if (!movementSaved) {
-      notify('บันทึกรับสินค้าไม่สำเร็จ');
-      return;
+    try {
+      const response = await fetch('/api/inventory/lots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productCode: selectedProduct.id,
+          packUnit: selectedProduct.packUnit,
+          packQuantity: Number(receiveForm.packQuantity),
+          lotNumber: receiveForm.batch.trim(),
+          expiryDate: receiveForm.expiry,
+          receivedAt: receiveForm.received,
+          unitCostBase: selectedProduct.costPrice
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'receive_failed');
+      setItems((current) => [...current.filter((item) => item.inventoryLotId !== result.lot.inventoryLotId), result.lot]);
+      setModal(null);
+      notify(`รับเข้า ${receivedBaseQuantity} ${selectedProduct.baseUnit} แล้ว`);
+    } catch (error) {
+      notify(error.message === 'LOT_EXPIRY_MISMATCH' ? 'ล็อตนี้มีวันหมดอายุไม่ตรงกับข้อมูลเดิม' : 'บันทึกรับสินค้าไม่สำเร็จ กรุณาตรวจฐานข้อมูล');
     }
-    setItems(nextItems);
-    setModal(null);
-    notify(movementSaved ? `รับเข้า ${receivedBaseQuantity} ${selectedProduct.baseUnit} แล้ว` : 'รับสินค้าแล้ว แต่บันทึกประวัติ movement ไม่สำเร็จ');
   }
 
   function openDeductModal(item) {
@@ -138,7 +129,7 @@ export default function InventoryPage() {
     setModal({ type: 'deduct', item });
   }
 
-  function deductStock(event) {
+  async function deductStock(event) {
     event.preventDefault();
     const quantity = Number(deductForm.quantity);
     if (!quantity || quantity < 1 || quantity > Number(modal.item.units)) {
@@ -147,24 +138,20 @@ export default function InventoryPage() {
     }
 
     const movementType = deductForm.reason === 'แพทย์เบิกใช้ในห้องตรวจ' ? 'CLINIC_USE' : deductForm.reason === 'นับสต็อกปรับปรุง' ? 'ADJUST' : 'WASTE';
-    const nextItems = items.map((item) => item.id === modal.item.id && item.batch === modal.item.batch
-      ? { ...item, units: Number(item.units) - quantity }
-      : item);
-    const movementSaved = commitInventoryMovement(nextItems, {
-      productId: modal.item.id,
-      batch: modal.item.batch,
-      movementType,
-      baseQuantity: quantity,
-      reason: deductForm.reason,
-      note: deductForm.note.trim()
-    });
-    if (!movementSaved) {
-      notify('ตัดสต็อกไม่สำเร็จ');
-      return;
+    try {
+      const response = await fetch(`/api/inventory/lots/${modal.item.inventoryLotId}/deduct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity, movementType, reason: deductForm.reason, note: deductForm.note.trim() })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'deduct_failed');
+      setItems((current) => current.map((item) => item.inventoryLotId === result.lot.inventoryLotId ? result.lot : item));
+      setModal(null);
+      notify(`ตัด ${quantity} ${modal.item.baseUnit || 'หน่วย'} แล้ว`);
+    } catch (error) {
+      notify(error.message === 'INSUFFICIENT_STOCK' ? 'จำนวนคงเหลือไม่พอสำหรับการตัด' : 'ตัดสต็อกไม่สำเร็จ กรุณาตรวจฐานข้อมูล');
     }
-    setItems(nextItems);
-    setModal(null);
-    notify(movementSaved ? `ตัด ${quantity} ${modal.item.baseUnit || 'หน่วย'} แล้ว` : 'สต็อกถูกตัดแล้ว แต่บันทึกประวัติ movement ไม่สำเร็จ');
   }
 
   return <div className="inventory-page">
