@@ -1,12 +1,19 @@
 import oracledb from 'oracledb';
 import { withOracleConnection, withOracleTransaction } from './oraclePool.js';
 
+function isoDate(value) {
+  if (!value) return null;
+  if (!(value instanceof Date)) return String(value).slice(0, 10);
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
 async function loadPurchaseOrder(connection, purchaseOrderId) {
   const result = await connection.execute(
     `SELECT po.purchase_order_id, po.po_number, po.ordered_at, po.status,
             s.supplier_code, s.company_name,
             poi.purchase_order_item_id, poi.product_id, p.product_code, p.product_name,
-            pu.unit_name, pu.base_units_per_unit, poi.quantity_ordered, poi.quantity_received,
+            poi.unit_name_snapshot AS unit_name, poi.base_units_per_unit_snapshot AS base_units_per_unit,
+            poi.quantity_ordered, poi.quantity_received,
             poi.unit_cost
        FROM purchase_orders po
        JOIN suppliers s ON s.supplier_id = po.supplier_id
@@ -23,7 +30,7 @@ async function loadPurchaseOrder(connection, purchaseOrderId) {
   return {
     id: first.PO_NUMBER,
     purchaseOrderId: Number(first.PURCHASE_ORDER_ID),
-    orderedAt: new Date(first.ORDERED_AT).toISOString().slice(0, 10),
+    orderedAt: isoDate(first.ORDERED_AT),
     supplierCode: first.SUPPLIER_CODE,
     supplier: first.COMPANY_NAME,
     status: first.STATUS,
@@ -73,7 +80,8 @@ export async function createPurchaseOrder(input) {
     if (product.rows[0].TRACKS_STOCK !== 'Y') throw Object.assign(new Error('service_not_stocked'), { code: 'SERVICE_NOT_STOCKED' });
 
     const unit = await connection.execute(
-      `SELECT unit_id FROM product_units WHERE product_id = :productId AND unit_name = :unitName`,
+      `SELECT unit_id, unit_name, base_units_per_unit FROM product_units
+        WHERE product_id = :productId AND unit_name = :unitName`,
       { productId: product.rows[0].PRODUCT_ID, unitName: input.packUnit },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -103,12 +111,15 @@ export async function createPurchaseOrder(input) {
     const purchaseOrderId = header.rows[0].PURCHASE_ORDER_ID;
     await connection.execute(
       `INSERT INTO purchase_order_items
-         (purchase_order_id, product_id, unit_id, quantity_ordered, quantity_received, unit_cost)
-       VALUES (:purchaseOrderId, :productId, :unitId, :quantity, 0, :unitCost)`,
+         (purchase_order_id, product_id, unit_id, unit_name_snapshot, base_units_per_unit_snapshot,
+          quantity_ordered, quantity_received, unit_cost)
+       VALUES (:purchaseOrderId, :productId, :unitId, :unitName, :baseUnitsPerUnit, :quantity, 0, :unitCost)`,
       {
         purchaseOrderId,
         productId: product.rows[0].PRODUCT_ID,
         unitId: unit.rows[0].UNIT_ID,
+        unitName: unit.rows[0].UNIT_NAME,
+        baseUnitsPerUnit: Number(unit.rows[0].BASE_UNITS_PER_UNIT),
         quantity,
         unitCost
       }
@@ -130,12 +141,12 @@ export async function receivePurchaseOrderLine(purchaseOrderId, input) {
     if (order.STATUS === 'CANCELLED') throw Object.assign(new Error('purchase_order_cancelled'), { code: 'PURCHASE_ORDER_CANCELLED' });
 
     const lineResult = await connection.execute(
-      `SELECT poi.purchase_order_item_id, poi.product_id, poi.unit_id, poi.quantity_ordered,
+            `SELECT poi.purchase_order_item_id, poi.product_id, poi.unit_id, poi.quantity_ordered,
               poi.quantity_received, poi.unit_cost, p.product_code, p.product_name, p.base_unit,
-              pu.unit_name, pu.base_units_per_unit
+              poi.unit_name_snapshot AS unit_name,
+              poi.base_units_per_unit_snapshot AS base_units_per_unit
          FROM purchase_order_items poi
          JOIN products p ON p.product_id = poi.product_id
-         JOIN product_units pu ON pu.unit_id = poi.unit_id
         WHERE poi.purchase_order_id = :purchaseOrderId
         ORDER BY poi.purchase_order_item_id
         FOR UPDATE OF poi.quantity_received`,
@@ -163,7 +174,7 @@ export async function receivePurchaseOrderLine(purchaseOrderId, input) {
     const existingLot = lotResult.rows[0];
     let inventoryLotId;
     if (existingLot) {
-      const previousExpiry = existingLot.EXPIRY_DATE ? new Date(existingLot.EXPIRY_DATE).toISOString().slice(0, 10) : null;
+      const previousExpiry = isoDate(existingLot.EXPIRY_DATE);
       if (previousExpiry !== input.expiryDate) throw Object.assign(new Error('lot_expiry_mismatch'), { code: 'LOT_EXPIRY_MISMATCH' });
       inventoryLotId = existingLot.INVENTORY_LOT_ID;
       await connection.execute(

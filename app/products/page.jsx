@@ -124,7 +124,11 @@ export default function ProductsPage() {
       }
       setModal(null);
     } catch (error) {
-      notify(error.message === 'product_code_or_barcode_exists' ? 'รหัสสินค้าหรือบาร์โค้ดนี้มีอยู่แล้ว' : 'บันทึกสินค้าไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
+      const messages = {
+        product_code_or_barcode_exists: 'รหัสสินค้าหรือบาร์โค้ดนี้มีอยู่แล้ว',
+        product_units_in_use: 'เปลี่ยนชื่อหน่วยหรือประเภทสินค้าไม่ได้ เพราะมีประวัติ PO/ล็อต/ขายแล้ว'
+      };
+      notify(messages[error.message] || 'บันทึกสินค้าไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
     }
   }
 

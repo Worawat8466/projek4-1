@@ -5,10 +5,9 @@ This project uses Oracle Database 19c or newer with the Node.js driver in Thin m
 ## Configure
 
 1. Create an Oracle schema/user for the application and grant the required table, sequence, and session privileges.
-2. Run `database/schema.sql` once while connected as that application schema.
-3. Run `database/seed.sql` once to add the starter role definitions and default clinic settings.
-4. Copy `.env.example` to `.env.local` and set `ORACLE_USER`, `ORACLE_PASSWORD`, and `ORACLE_CONNECT_STRING` for your own environment. Keep `.env.local` private; it is ignored by git.
-5. Start the app with `npm run dev` and request `/api/db/health`. A configured, reachable database returns `{ "ok": true, "database": "oracle" }`.
+2. Copy `.env.example` to `.env.local` and set `ORACLE_USER`, `ORACLE_PASSWORD`, and `ORACLE_CONNECT_STRING` for your own environment. Keep `.env.local` private; it is ignored by git.
+3. Run `npm run db:setup`. It creates the schema when needed, applies pending migrations, and seeds the starter role definitions and default clinic settings.
+4. Start the app with `npm run dev` and request `/api/db/health`. A configured, reachable database returns `{ "ok": true, "database": "oracle" }`.
 
 For Oracle XE or a local container, the connect string commonly looks like `localhost:1521/FREEPDB1`. Use the service name provided by your Oracle installation.
 

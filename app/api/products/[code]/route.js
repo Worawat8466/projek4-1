@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 
 function errorResponse(error) {
   if (error.code === 'ORACLE_NOT_CONFIGURED') return Response.json({ error: 'database_not_configured' }, { status: 503 });
+  if (error.code === 'PRODUCT_UNITS_IN_USE') return Response.json({ error: 'product_units_in_use' }, { status: 409 });
   if (error.errorNum === 1) return Response.json({ error: 'product_code_or_barcode_exists' }, { status: 409 });
   return Response.json({ error: 'database_error' }, { status: 500 });
 }

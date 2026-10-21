@@ -95,6 +95,20 @@ async function getProductUnits(connection, productId) {
   return result.rows;
 }
 
+async function hasProductHistory(connection, productId) {
+  const result = await connection.execute(
+    `SELECT
+       (SELECT COUNT(*) FROM purchase_order_items WHERE product_id = :productId) AS PO_COUNT,
+       (SELECT COUNT(*) FROM inventory_lots WHERE product_id = :productId) AS LOT_COUNT,
+       (SELECT COUNT(*) FROM sale_items WHERE product_id = :productId) AS SALE_COUNT
+       FROM dual`,
+    { productId },
+    { outFormat: oracledb.OUT_FORMAT_OBJECT }
+  );
+  const row = result.rows[0];
+  return Number(row.PO_COUNT) + Number(row.LOT_COUNT) + Number(row.SALE_COUNT) > 0;
+}
+
 export async function createProduct(input) {
   return withOracleTransaction(async (connection) => {
     let stage = 'category';
@@ -159,7 +173,19 @@ export async function updateProduct(productCode, input) {
   return withOracleTransaction(async (connection) => {
     const existing = await getProductByCode(connection, productCode);
     if (!existing) return null;
+    const existingUnits = await getProductUnits(connection, existing.PRODUCT_ID);
+    const existingProduct = mapProduct(existing, existingUnits);
     const tracksStock = input.type !== 'บริการ';
+    const baseUnit = input.baseUnit.trim();
+    const packUnit = tracksStock ? input.packUnit.trim() : baseUnit;
+    const multiplier = tracksStock ? Number(input.multiplier) || 1 : 1;
+    const unitIdentityChanged = (existing.TRACKS_STOCK === 'Y') !== tracksStock ||
+      existingProduct.baseUnit.toLowerCase() !== baseUnit.toLowerCase() ||
+      (tracksStock && existingProduct.packUnit.toLowerCase() !== packUnit.toLowerCase());
+    const hasHistory = await hasProductHistory(connection, existing.PRODUCT_ID);
+    if (unitIdentityChanged && hasHistory) {
+      throw Object.assign(new Error('product_units_in_use'), { code: 'PRODUCT_UNITS_IN_USE' });
+    }
     const categoryId = await findOrCreateCategory(connection, input.category);
     const baseCost = input.costPrice == null || input.costPrice === '' ? null : Number(input.costPrice);
     await connection.execute(
@@ -183,21 +209,36 @@ export async function updateProduct(productCode, input) {
       }
     );
     const productId = existing.PRODUCT_ID;
-    const multiplier = tracksStock ? Number(input.multiplier) || 1 : 1;
-    const baseUnit = input.baseUnit.trim();
-    const packUnit = tracksStock ? input.packUnit.trim() : baseUnit;
-    await connection.execute('DELETE FROM product_units WHERE product_id = :productId', { productId });
-    await connection.execute(
-      `INSERT INTO product_units (product_id, unit_name, base_units_per_unit, sale_price, is_default_sale_unit)
-       VALUES (:productId, :unitName, 1, :salePrice, 'Y')`,
-      { productId, unitName: baseUnit, salePrice: Number(input.salePrice) }
-    );
-    if (tracksStock && packUnit.toLowerCase() !== baseUnit.toLowerCase()) {
+    if (hasHistory) {
+      for (const unit of existingUnits) {
+        const isPackUnit = tracksStock && unit.UNIT_NAME.toLowerCase() === existingProduct.packUnit.toLowerCase();
+        const baseUnitsPerUnit = isPackUnit ? multiplier : Number(unit.BASE_UNITS_PER_UNIT);
+        await connection.execute(
+          `UPDATE product_units SET base_units_per_unit = :baseUnitsPerUnit,
+                sale_price = :salePrice, is_default_sale_unit = :isDefault
+            WHERE unit_id = :unitId`,
+          {
+            unitId: unit.UNIT_ID,
+            baseUnitsPerUnit,
+            salePrice: Number(input.salePrice) * baseUnitsPerUnit,
+            isDefault: unit.UNIT_NAME.toLowerCase() === baseUnit.toLowerCase() ? 'Y' : 'N'
+          }
+        );
+      }
+    } else {
+      await connection.execute('DELETE FROM product_units WHERE product_id = :productId', { productId });
       await connection.execute(
         `INSERT INTO product_units (product_id, unit_name, base_units_per_unit, sale_price, is_default_sale_unit)
-         VALUES (:productId, :unitName, :multiplier, :salePrice, 'N')`,
-        { productId, unitName: packUnit, multiplier, salePrice: Number(input.salePrice) * multiplier }
+         VALUES (:productId, :unitName, 1, :salePrice, 'Y')`,
+        { productId, unitName: baseUnit, salePrice: Number(input.salePrice) }
       );
+      if (tracksStock && packUnit.toLowerCase() !== baseUnit.toLowerCase()) {
+        await connection.execute(
+          `INSERT INTO product_units (product_id, unit_name, base_units_per_unit, sale_price, is_default_sale_unit)
+           VALUES (:productId, :unitName, :multiplier, :salePrice, 'N')`,
+          { productId, unitName: packUnit, multiplier, salePrice: Number(input.salePrice) * multiplier }
+        );
+      }
     }
     return mapProduct(await getProductByCode(connection, productCode), await getProductUnits(connection, productId));
   });
