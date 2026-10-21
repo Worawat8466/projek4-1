@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import ProfilePhotoField, { ProfileAvatar, uploadProfilePhoto } from '../../src/ProfilePhotoField.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'],
@@ -39,6 +40,7 @@ export default function CustomersPage() {
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ name: '', surname: '', phone: '' });
+  const [photoFile, setPhotoFile] = useState(null);
   const [historyQuery, setHistoryQuery] = useState('');
 
   useEffect(() => {
@@ -67,12 +69,14 @@ export default function CustomersPage() {
 
   function openAddModal() {
     setForm({ name: '', surname: '', phone: '' });
+    setPhotoFile(null);
     setModal({ type: 'add' });
   }
 
   function openEditModal(customer) {
     const [name, ...surnameParts] = customer.name.split(' ');
     setForm({ name, surname: surnameParts.join(' '), phone: customer.phone === '-' ? '' : customer.phone });
+    setPhotoFile(null);
     setModal({ type: 'edit', customer });
   }
 
@@ -92,9 +96,17 @@ export default function CustomersPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'save_failed');
-      if (modal.type === 'edit') setCustomers((current) => current.map((customer) => customer.id === modal.customer.id ? result.customer : customer));
-      else setCustomers((current) => [...current, result.customer]);
-      notify(modal.type === 'edit' ? 'แก้ไขข้อมูลลูกค้าแล้ว' : 'เพิ่มลูกค้าใหม่แล้ว');
+      let savedCustomer = result.customer;
+      if (photoFile) {
+        try {
+          savedCustomer = { ...savedCustomer, photoUrl: await uploadProfilePhoto('customers', savedCustomer.id, photoFile) };
+        } catch {
+          notify('บันทึกข้อมูลลูกค้าแล้ว แต่บันทึกรูปไม่สำเร็จ');
+        }
+      }
+      if (modal.type === 'edit') setCustomers((current) => current.map((customer) => customer.id === modal.customer.id ? savedCustomer : customer));
+      else setCustomers((current) => [...current, savedCustomer]);
+      if (!photoFile) notify(modal.type === 'edit' ? 'แก้ไขข้อมูลลูกค้าแล้ว' : 'เพิ่มลูกค้าใหม่แล้ว');
       setModal(null);
     } catch {
       notify('บันทึกลูกค้าไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
@@ -143,7 +155,7 @@ export default function CustomersPage() {
             <thead><tr><th>ชื่อลูกค้า</th><th>ไอดี</th><th>ติดต่อ</th><th>สัตว์เลี้ยง</th><th>วันที่สมัคร</th><th>ประวัติ</th><th>จัดการ</th></tr></thead>
             <tbody>
               {filteredCustomers.map((customer) => <tr key={customer.id}>
-                <td>{customer.name}</td><td className="mono">{customer.id}</td><td className="mono">{customer.phone || '-'}</td><td>{customer.petCount || 0}</td><td>{customer.createdAt ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(new Date(customer.createdAt)) : '-'}</td>
+                <td><div className="profile-name-cell"><ProfileAvatar src={customer.photoUrl} name={customer.name} />{customer.name}</div></td><td className="mono">{customer.id}</td><td className="mono">{customer.phone || '-'}</td><td>{customer.petCount || 0}</td><td>{customer.createdAt ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(new Date(customer.createdAt)) : '-'}</td>
                 <td><button className="history-action" aria-label={`ดูประวัติ ${customer.name}`} title="ดูประวัติ" onClick={() => openHistoryModal(customer)}><HistoryIcon /></button></td>
                 <td><div className="customer-row-actions"><button className="edit-action" aria-label={`แก้ไข ${customer.name}`} title="แก้ไข" onClick={() => openEditModal(customer)}><EditIcon /></button><button className="delete-action" aria-label={`ลบ ${customer.name}`} title="ลบ" onClick={() => deleteCustomer(customer)}><DeleteIcon /></button></div></td>
               </tr>)}
@@ -157,6 +169,7 @@ export default function CustomersPage() {
         <form className="customer-modal customer-form-modal" onSubmit={saveCustomer}>
           <button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button>
           <h2>{modal.type === 'edit' ? 'แก้ไข' : 'เพิ่มลูกค้า'}</h2>
+          <ProfilePhotoField name={`${form.name} ${form.surname}`} src={modal.type === 'edit' ? modal.customer.photoUrl : ''} onFileChange={setPhotoFile} />
           <label>ชื่อ<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
           <label>นามสกุล<input value={form.surname} onChange={(event) => setForm({ ...form, surname: event.target.value })} /></label>
           <label>เบอร์โทร<input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>

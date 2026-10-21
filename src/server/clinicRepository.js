@@ -9,7 +9,8 @@ function customerFromRow(row) {
     phone: row.PHONE || '',
     email: row.EMAIL || '',
     address: row.ADDRESS || '',
-    petCount: Number(row.PET_COUNT) || 0
+    petCount: Number(row.PET_COUNT) || 0,
+    photoUrl: Number(row.HAS_PROFILE_IMAGE) > 0 ? `/api/profile-images/customers/${encodeURIComponent(row.CUSTOMER_CODE)}` : null
   };
 }
 
@@ -23,7 +24,8 @@ function petFromRow(row) {
     species: row.SPECIES,
     breed: row.BREED || '',
     gender: row.SEX === 'MALE' ? 'ชาย' : row.SEX === 'FEMALE' ? 'หญิง' : 'ไม่ระบุ',
-    birth: row.BIRTH_DATE ? new Date(row.BIRTH_DATE).toISOString().slice(0, 10) : ''
+    birth: row.BIRTH_DATE ? new Date(row.BIRTH_DATE).toISOString().slice(0, 10) : '',
+    photoUrl: Number(row.HAS_PROFILE_IMAGE) > 0 ? `/api/profile-images/pets/${encodeURIComponent(row.CHIP_NUMBER || row.PET_ID)}` : null
   };
 }
 
@@ -46,15 +48,17 @@ function staffFromRow(row) {
     roleCode: row.ROLE_CODE,
     email: row.EMAIL,
     phone: row.PHONE || '',
-    active: row.IS_ACTIVE === 'Y'
+    active: row.IS_ACTIVE === 'Y',
+    photoUrl: Number(row.HAS_PROFILE_IMAGE) > 0 ? `/api/profile-images/staff/${Number(row.STAFF_ID)}` : null
   };
 }
 
 export async function listCustomers() {
   return withOracleConnection(async (connection) => {
     const result = await connection.execute(
-      `SELECT c.customer_id, c.customer_code, c.first_name, c.last_name, c.phone, c.email, c.address,
-              (SELECT COUNT(*) FROM pets p WHERE p.customer_id = c.customer_id AND p.is_active = 'Y') AS pet_count
+            `SELECT c.customer_id, c.customer_code, c.first_name, c.last_name, c.phone, c.email, c.address,
+              (SELECT COUNT(*) FROM pets p WHERE p.customer_id = c.customer_id AND p.is_active = 'Y') AS pet_count,
+              (SELECT COUNT(*) FROM profile_images pi WHERE pi.customer_id = c.customer_id) AS has_profile_image
          FROM customers c WHERE c.is_active = 'Y' ORDER BY c.first_name, c.last_name`,
       [],
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -79,7 +83,8 @@ export async function createCustomer(input) {
       }
     );
     const result = await connection.execute(
-      `SELECT c.customer_id, c.customer_code, c.first_name, c.last_name, c.phone, c.email, c.address, 0 AS pet_count
+            `SELECT c.customer_id, c.customer_code, c.first_name, c.last_name, c.phone, c.email, c.address,
+              0 AS pet_count, 0 AS has_profile_image
          FROM customers c WHERE c.customer_code = :code`,
       { code },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -105,8 +110,9 @@ export async function updateCustomer(code, input) {
     );
     if (!result.rowsAffected) return null;
     const rows = await connection.execute(
-      `SELECT c.customer_id, c.customer_code, c.first_name, c.last_name, c.phone, c.email, c.address,
-              (SELECT COUNT(*) FROM pets p WHERE p.customer_id = c.customer_id AND p.is_active = 'Y') AS pet_count
+            `SELECT c.customer_id, c.customer_code, c.first_name, c.last_name, c.phone, c.email, c.address,
+              (SELECT COUNT(*) FROM pets p WHERE p.customer_id = c.customer_id AND p.is_active = 'Y') AS pet_count,
+              (SELECT COUNT(*) FROM profile_images pi WHERE pi.customer_id = c.customer_id) AS has_profile_image
          FROM customers c WHERE c.customer_code = :code`,
       { code },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -128,7 +134,8 @@ export async function deactivateCustomer(code) {
 export async function listPets() {
   return withOracleConnection(async (connection) => {
     const result = await connection.execute(
-      `SELECT p.pet_id, p.pet_name, p.species, p.breed, p.sex, p.birth_date, p.chip_number,
+            `SELECT p.pet_id, p.pet_name, p.species, p.breed, p.sex, p.birth_date, p.chip_number,
+              (SELECT COUNT(*) FROM profile_images pi WHERE pi.pet_id = p.pet_id) AS has_profile_image,
               c.customer_code, c.first_name AS owner_first_name, c.last_name AS owner_last_name
          FROM pets p JOIN customers c ON c.customer_id = p.customer_id
         WHERE p.is_active = 'Y' AND c.is_active = 'Y'
@@ -164,7 +171,8 @@ export async function createPet(input) {
       }
     );
     const rows = await connection.execute(
-      `SELECT p.pet_id, p.pet_name, p.species, p.breed, p.sex, p.birth_date, p.chip_number,
+            `SELECT p.pet_id, p.pet_name, p.species, p.breed, p.sex, p.birth_date, p.chip_number,
+              0 AS has_profile_image,
               c.customer_code, c.first_name AS owner_first_name, c.last_name AS owner_last_name
          FROM pets p JOIN customers c ON c.customer_id = p.customer_id
         WHERE p.chip_number = :chipNumber ORDER BY p.pet_id DESC FETCH FIRST 1 ROW ONLY`,
@@ -200,7 +208,8 @@ export async function updatePet(chipNumber, input) {
     );
     if (!result.rowsAffected) return null;
     const rows = await connection.execute(
-      `SELECT p.pet_id, p.pet_name, p.species, p.breed, p.sex, p.birth_date, p.chip_number,
+            `SELECT p.pet_id, p.pet_name, p.species, p.breed, p.sex, p.birth_date, p.chip_number,
+              (SELECT COUNT(*) FROM profile_images pi WHERE pi.pet_id = p.pet_id) AS has_profile_image,
               c.customer_code, c.first_name AS owner_first_name, c.last_name AS owner_last_name
          FROM pets p JOIN customers c ON c.customer_id = p.customer_id WHERE p.chip_number = :chipNumber`,
       { chipNumber },
@@ -296,7 +305,8 @@ export async function deactivateSupplier(code) {
 export async function listStaff() {
   return withOracleConnection(async (connection) => {
     const result = await connection.execute(
-      `SELECT s.staff_id, s.first_name, s.last_name, s.email, s.phone, s.is_active,
+            `SELECT s.staff_id, s.first_name, s.last_name, s.email, s.phone, s.is_active,
+              (SELECT COUNT(*) FROM profile_images pi WHERE pi.staff_id = s.staff_id) AS has_profile_image,
               r.role_code, r.role_name
          FROM staff s JOIN staff_roles r ON r.role_id = s.role_id
         WHERE s.is_active = 'Y' ORDER BY s.first_name, s.last_name`,
@@ -328,8 +338,9 @@ export async function createStaff(input) {
       }
     );
     const rows = await connection.execute(
-      `SELECT s.staff_id, s.first_name, s.last_name, s.email, s.phone, s.is_active, r.role_code, r.role_name
-         FROM staff s JOIN staff_roles r ON r.role_id = s.role_id WHERE s.email = :email`,
+      `SELECT s.staff_id, s.first_name, s.last_name, s.email, s.phone, s.is_active, r.role_code, r.role_name,
+            (SELECT COUNT(*) FROM profile_images pi WHERE pi.staff_id = s.staff_id) AS has_profile_image
+        FROM staff s JOIN staff_roles r ON r.role_id = s.role_id WHERE s.email = :email`,
       { email: input.email?.trim() || '' },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -359,8 +370,9 @@ export async function updateStaff(staffId, input) {
     );
     if (!result.rowsAffected) return null;
     const rows = await connection.execute(
-      `SELECT s.staff_id, s.first_name, s.last_name, s.email, s.phone, s.is_active, r.role_code, r.role_name
-         FROM staff s JOIN staff_roles r ON r.role_id = s.role_id WHERE s.staff_id = :staffId`,
+      `SELECT s.staff_id, s.first_name, s.last_name, s.email, s.phone, s.is_active, r.role_code, r.role_name,
+            (SELECT COUNT(*) FROM profile_images pi WHERE pi.staff_id = s.staff_id) AS has_profile_image
+        FROM staff s JOIN staff_roles r ON r.role_id = s.role_id WHERE s.staff_id = :staffId`,
       { staffId: Number(staffId) },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );

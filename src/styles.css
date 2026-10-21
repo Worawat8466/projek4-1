@@ -2445,3 +2445,32 @@ body {
   .pet-picker, .active-pet { width: 100%; }
   .cart-panel { min-height: 390px; padding: 14px 12px; }
 }
+
+.profile-avatar {
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #d8e3e7;
+  border-radius: 50%;
+  background: #eaf3f0;
+  color: #23624b;
+  font-size: 14px;
+  font-weight: 600;
+}
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.customer-avatar img, .pet-avatar-placeholder img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.profile-name-cell { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+.profile-avatar-preview { width: 76px; height: 76px; font-size: 24px; }
+.profile-photo-field { display: flex; grid-column: 1 / -1; align-items: center; gap: 14px; min-width: 0; }
+.profile-photo-control { display: grid; gap: 6px; color: #34465a; font-size: 13px; font-weight: 500; }
+.profile-photo-control input { max-width: 100%; color: #526477; font: 12px Prompt, sans-serif; }
+.profile-photo-error { color: #b42318; font-size: 11px; }
+.profile-photo-manager { display: flex; align-items: center; flex-wrap: wrap; gap: 22px; padding: 14px 0; border-bottom: 1px solid #dce4e9; }
+.profile-photo-manager > label { display: grid; gap: 6px; width: min(100%, 300px); color: #34465a; font-size: 13px; }
+.profile-photo-manager select { height: 40px; padding: 0 10px; border: 1px solid #cbd5df; border-radius: 7px; background: #fff; color: #172033; font: 13px Prompt, sans-serif; }
+@media (max-width: 600px) {
+  .profile-photo-manager { align-items: flex-start; flex-direction: column; gap: 14px; }
+}

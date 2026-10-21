@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import ProfilePhotoField, { ProfileAvatar, uploadProfilePhoto } from '../../src/ProfilePhotoField.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -30,6 +31,7 @@ export default function EmployeesPage() {
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [photoFile, setPhotoFile] = useState(null);
   const [toast, setToast] = useState('');
 
   useEffect(() => {
@@ -58,12 +60,14 @@ export default function EmployeesPage() {
 
   function openAddModal() {
     setForm(emptyForm);
+    setPhotoFile(null);
     setModal({ type: 'add' });
   }
 
   function openEditModal(employee) {
     const [firstName = '', ...lastNameParts] = employee.name.split(' ');
     setForm({ firstName, lastName: lastNameParts.join(' '), role: employee.role, email: employee.email, phone: employee.phone });
+    setPhotoFile(null);
     setModal({ type: 'edit', employee });
   }
 
@@ -85,9 +89,20 @@ export default function EmployeesPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'save_failed');
-      if (modal.type === 'edit') setEmployees((current) => current.map((employee) => employee.id === modal.employee.id ? result.staff : employee));
-      else setEmployees((current) => [...current, result.staff]);
-      notify(modal.type === 'edit' ? 'บันทึกการแก้ไขพนักงานแล้ว' : 'เพิ่มพนักงานแล้ว');
+      let savedEmployee = result.staff;
+      let photoSaved = true;
+      if (photoFile) {
+        try {
+          savedEmployee = { ...savedEmployee, photoUrl: await uploadProfilePhoto('staff', savedEmployee.id, photoFile) };
+        } catch {
+          photoSaved = false;
+        }
+      }
+      if (modal.type === 'edit') setEmployees((current) => current.map((employee) => employee.id === modal.employee.id ? savedEmployee : employee));
+      else setEmployees((current) => [...current, savedEmployee]);
+      notify(photoSaved
+        ? modal.type === 'edit' ? 'บันทึกการแก้ไขพนักงานแล้ว' : 'เพิ่มพนักงานแล้ว'
+        : 'บันทึกข้อมูลพนักงานแล้ว แต่บันทึกรูปไม่สำเร็จ');
       setModal(null);
     } catch (error) {
       notify(error.message === 'duplicate_value' ? 'อีเมลนี้ถูกใช้งานแล้ว' : 'บันทึกพนักงานไม่สำเร็จ กรุณาตรวจการเชื่อมต่อฐานข้อมูล');
@@ -127,7 +142,7 @@ export default function EmployeesPage() {
         <table className="employees-table">
           <thead><tr><th>ชื่อพนักงาน</th><th>บทบาทหน้าที่</th><th>อีเมล</th><th>เบอร์โทรศัพท์</th><th>จัดการ</th></tr></thead>
           <tbody>{filteredEmployees.map((employee) => <tr key={employee.id}>
-            <td><b>{employee.name}</b><small>{employee.id}</small></td>
+            <td><div className="profile-name-cell"><ProfileAvatar src={employee.photoUrl} name={employee.name} /><span><b>{employee.name}</b><small>{employee.id}</small></span></div></td>
             <td><span className={`employee-role ${employee.role === 'ผู้ดูแลระบบ' ? 'admin' : ''}`}>{employee.role}</span></td>
             <td className="employee-email">{employee.email}</td>
             <td className="employee-phone">{employee.phone}</td>
@@ -147,6 +162,7 @@ export default function EmployeesPage() {
       <form className="employee-modal employee-form-modal" onSubmit={saveEmployee}>
         <button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button>
         <h2>{modal.type === 'edit' ? 'แก้ไขพนักงาน' : 'เพิ่มพนักงาน'}</h2>
+        <ProfilePhotoField name={`${form.firstName} ${form.lastName}`} src={modal.type === 'edit' ? modal.employee.photoUrl : ''} onFileChange={setPhotoFile} />
         <label className="employee-field">ชื่อ<input autoFocus required value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} /></label>
         <label className="employee-field">นามสกุล<input required value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>
         <label className="employee-field">อีเมล<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
