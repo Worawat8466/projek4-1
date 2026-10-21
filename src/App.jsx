@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { defaultSettings } from './appSettings.js';
 import { ProfileAvatar } from './ProfilePhotoField.jsx';
 
@@ -46,6 +46,7 @@ export default function App() {
   const [dataError, setDataError] = useState('');
   const [savingSale, setSavingSale] = useState(false);
   const [query, setQuery] = useState('');
+  const barcodeInputRef = useRef(null);
   const [category, setCategory] = useState('all');
   const [activePet, setActivePet] = useState('none');
   const [cart, setCart] = useState({ none: [] });
@@ -93,7 +94,7 @@ export default function App() {
   const catalog = useMemo(() => products.map((product) => toCatalogItem(product, inventory)), [products, inventory]);
   const filteredCatalog = useMemo(() => catalog.filter((item) => {
     const matchesCategory = category === 'all' || item.category === category;
-    const searchable = `${item.name} ${item.id}`.toLowerCase();
+    const searchable = `${item.name} ${item.id} ${item.barcode || ''}`.toLowerCase();
     return matchesCategory && searchable.includes(query.toLowerCase());
   }), [catalog, category, query]);
 
@@ -115,6 +116,10 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2200);
   }
 
+  function focusBarcodeInput() {
+    window.requestAnimationFrame(() => barcodeInputRef.current?.focus());
+  }
+
   function addItem(item) {
     if (item.tracksStock) {
       const available = inventory
@@ -125,6 +130,7 @@ export default function App() {
         .reduce((total, cartItem) => total + cartItem.qty, 0);
       if (inCart >= available) {
         notify(`สต็อก ${item.shortName} ไม่เพียงพอ`);
+        focusBarcodeInput();
         return;
       }
     }
@@ -134,6 +140,7 @@ export default function App() {
       return { ...current, [activePet]: existing ? petCart.map((cartItem) => cartItem.id === item.id ? { ...cartItem, qty: cartItem.qty + 1 } : cartItem) : [...petCart, { ...item, qty: 1 }] };
     });
     notify(`เพิ่ม ${item.shortName} ให้ ${petByKey[activePet]?.name || guestPet.name}`);
+    focusBarcodeInput();
   }
 
   function handleCatalogKeyDown(event) {
@@ -279,7 +286,7 @@ export default function App() {
       <section className="catalog-panel">
         <header className="catalog-heading"><div><span>หน้าร้าน</span><h1>สินค้าและบริการ</h1></div><small>{filteredCatalog.length} รายการ</small></header>
         {dataError && <div className="empty-state" role="alert">{dataError}</div>}
-        <label className="search-box"><SearchIcon /><input autoFocus value={query} onKeyDown={handleCatalogKeyDown} onChange={(event) => setQuery(event.target.value)} placeholder="ยิงบาร์โค้ดหรือค้นหาชื่อ / รหัสสินค้า..." /></label>
+        <label className="search-box"><SearchIcon /><input ref={barcodeInputRef} autoFocus value={query} onKeyDown={handleCatalogKeyDown} onChange={(event) => setQuery(event.target.value)} placeholder="ยิงบาร์โค้ดหรือค้นหาชื่อ / รหัสสินค้า..." /></label>
         <div className="toolbar">
           <div className="filters">{[['all', 'ทั้งหมด'], ['med', 'ยา/เวชภัณฑ์'], ['service', 'ค่าบริการ'], ['food', 'อาหารสัตว์']].map(([value, label]) => <button className={category === value ? 'selected' : ''} onClick={() => setCategory(value)} key={value}>{label}</button>)}</div>
           <div className="pet-picker">
