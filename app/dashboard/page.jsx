@@ -123,13 +123,24 @@ export default function DashboardPage() {
   const average = visibleSales.length ? revenue / visibleSales.length : 0;
   const trend = useMemo(() => buildTrend(visibleSales, range.from, range.to), [visibleSales, range]);
   const peak = Math.max(...trend.map((point) => point.total), 0);
-  const alerts = useMemo(() => inventory
-    .map((item) => ({ ...item, alertStatus: getLotStatus(item, settings) }))
-    .filter((item) => item.alertStatus !== 'ปกติ')
-    .sort((a, b) => {
+  const alerts = useMemo(() => {
+    const alertsByProduct = new Map();
+    const alertsByLot = [];
+    for (const item of inventory) {
+      const alertStatus = getLotStatus(item, settings);
+      if (alertStatus === 'สต็อกต่ำ') {
+        if (!alertsByProduct.has(item.productId)) {
+          alertsByProduct.set(item.productId, { ...item, batch: 'รวมทุกล็อต', units: item.productTotalUnits, alertStatus });
+        }
+      } else if (alertStatus !== 'ปกติ') {
+        alertsByLot.push({ ...item, alertStatus });
+      }
+    }
+    return [...alertsByLot, ...alertsByProduct.values()].sort((a, b) => {
       const priority = { หมดอายุ: 0, 'ใกล้หมดอายุ': 1, 'สต็อกต่ำ': 2 };
       return priority[a.alertStatus] - priority[b.alertStatus];
-    }), [inventory, settings]);
+    });
+  }, [inventory, settings]);
   const alertCounts = useMemo(() => alerts.reduce((counts, item) => {
     counts[item.alertStatus] = (counts[item.alertStatus] || 0) + 1;
     return counts;

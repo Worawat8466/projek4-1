@@ -9,7 +9,10 @@ const menuItems = [
 ];
 
 const emptyOrderForm = { supplierCode: '', productCode: '', quantity: '1', packPrice: '' };
-const emptyReceiveForm = { quantity: '1', batch: '', expiry: '', received: new Date().toISOString().slice(0, 10) };
+function localDateValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+const emptyReceiveForm = { quantity: '1', batch: '', expiry: '', received: localDateValue() };
 
 function SearchIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>;
@@ -99,7 +102,7 @@ export default function PurchaseOrdersPage() {
     try {
       const response = await fetch('/api/purchase-orders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...orderForm, quantity, packPrice: Number(orderForm.packPrice) })
+        body: JSON.stringify({ ...orderForm, packUnit: selectedProduct?.packUnit, quantity, packPrice: Number(orderForm.packPrice) })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'create_failed');
@@ -122,7 +125,13 @@ export default function PurchaseOrdersPage() {
     try {
       const response = await fetch(`/api/purchase-orders/${modal.order.purchaseOrderId}/receive`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productCode: modal.order.productId, ...receiveForm, quantity: Number(receiveForm.quantity) })
+        body: JSON.stringify({
+          productCode: modal.order.productId,
+          quantity: Number(receiveForm.quantity),
+          lotNumber: receiveForm.batch,
+          expiryDate: receiveForm.expiry,
+          receivedAt: receiveForm.received
+        })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'receive_failed');

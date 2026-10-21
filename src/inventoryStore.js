@@ -18,7 +18,9 @@ export function getLotStatus(item, settings) {
       if (daysUntilExpiry <= Number(settings.expiryAlertDays)) return 'ใกล้หมดอายุ';
     }
   }
-  if (settings.lowStockAlerts && Number(item.units) < Number(settings.lowStockThreshold)) return 'สต็อกต่ำ';
+  const stock = Number(item.productTotalUnits ?? item.units);
+  const threshold = Number(item.minimumStock ?? settings.lowStockThreshold);
+  if (settings.lowStockAlerts && stock < threshold) return 'สต็อกต่ำ';
   return 'ปกติ';
 }
 

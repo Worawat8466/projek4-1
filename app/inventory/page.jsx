@@ -10,7 +10,10 @@ const menuItems = [
   ['ผู้จัดจำหน่าย', '/suppliers'], ['สรุปยอดขาย', '/sales-reports'], ['จัดการพนักงาน', '/employees'], ['ตั้งค่า', '/settings']
 ];
 
-const emptyReceiveForm = { productId: '', packQuantity: '1', batch: '', expiry: '', received: new Date().toISOString().slice(0, 10) };
+function localDateValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+const emptyReceiveForm = { productId: '', packQuantity: '1', batch: '', expiry: '', received: localDateValue() };
 const emptyDeductForm = { quantity: '', reason: 'ของเสีย', note: '' };
 const deductReasons = ['ของเสีย', 'หมดอายุ', 'แพทย์เบิกใช้ในห้องตรวจ', 'นับสต็อกปรับปรุง'];
 

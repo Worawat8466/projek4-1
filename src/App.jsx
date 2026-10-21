@@ -19,7 +19,9 @@ const menuItems = [
 ];
 const guestPet = { name: 'ไม่ระบุสัตว์เลี้ยง', breed: 'รายการทั่วไป' };
 function toCatalogItem(product, inventory) {
-  const category = product.category === 'อาหารสัตว์' ? 'food' : product.type === 'บริการ' ? 'service' : 'med';
+  const categoryName = String(product.category || '').trim().toLowerCase();
+  const isFood = ['อาหารสัตว์', 'อาหาร', 'food', 'pet food'].includes(categoryName);
+  const category = isFood ? 'food' : product.type === 'บริการ' ? 'service' : 'med';
   const stock = product.tracksStock
     ? inventory.filter((lot) => lot.id === product.id).reduce((total, lot) => total + Number(lot.units ?? lot.remainingBaseQuantity) || 0, 0)
     : null;

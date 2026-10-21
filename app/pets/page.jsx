@@ -117,7 +117,7 @@ export default function PetsPage() {
 
   function openEditModal(pet) {
     const [year, month, day] = String(pet.birth || '').split('-');
-    const species = pet.species === 'Cat' ? 'แมว' : pet.species === 'Dog' ? 'สุนัข' : pet.species ? 'อื่น ๆ' : 'สุนัข';
+    const species = ['Cat', 'แมว'].includes(pet.species) ? 'แมว' : ['Dog', 'สุนัข'].includes(pet.species) ? 'สุนัข' : pet.species ? 'อื่น ๆ' : 'สุนัข';
     setForm({ name: pet.name, owner: pet.ownerCode, breed: pet.breed, id: pet.id, gender: pet.gender, species, birthDay: day || '', birthMonth: month || '', birthYear: year ? String(Number(year) + 543) : '' });
     setPhotoFile(null);
     setOwnerQuery(pet.owner);

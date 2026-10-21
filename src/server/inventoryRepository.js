@@ -3,7 +3,9 @@ import { withOracleTransaction, withOracleConnection } from './oraclePool.js';
 
 function isoDate(value) {
   if (!value) return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
   return String(value).slice(0, 10);
 }
 
@@ -18,6 +20,8 @@ function mapLot(row) {
     received: isoDate(row.RECEIVED_AT),
     units: Number(row.REMAINING_BASE_QUANTITY),
     receivedBaseQuantity: Number(row.RECEIVED_BASE_QUANTITY),
+    minimumStock: Number(row.MIN_STOCK),
+    productTotalUnits: Number(row.PRODUCT_TOTAL_UNITS) || 0,
     packs: Number(row.RECEIVED_BASE_QUANTITY) / (Number(row.BASE_UNITS_PER_PACK) || 1),
     baseUnit: row.BASE_UNIT,
     packUnit: row.PACK_UNIT || row.BASE_UNIT,
@@ -27,8 +31,10 @@ function mapLot(row) {
 }
 
 const lotSelect = `SELECT l.inventory_lot_id, l.product_id, p.product_code, p.product_name,
-                          p.base_unit, l.lot_number, l.expiry_date, l.received_at,
+                            p.base_unit, p.min_stock, l.lot_number, l.expiry_date, l.received_at,
                           l.received_base_quantity, l.remaining_base_quantity, l.unit_cost_base,
+                            (SELECT NVL(SUM(all_lots.remaining_base_quantity), 0)
+                              FROM inventory_lots all_lots WHERE all_lots.product_id = l.product_id) AS product_total_units,
                           (SELECT pu.unit_name FROM product_units pu WHERE pu.product_id = p.product_id
                             ORDER BY pu.base_units_per_unit DESC FETCH FIRST 1 ROW ONLY) AS pack_unit,
                           (SELECT pu.base_units_per_unit FROM product_units pu WHERE pu.product_id = p.product_id
