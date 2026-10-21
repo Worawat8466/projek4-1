@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "db:setup": "node database/initialize.js"
+    "db:setup": "node database/initialize.js",
+    "db:seed:demo": "node database/seed-demo.js"
   },
   "dependencies": {
     "next": "latest",
