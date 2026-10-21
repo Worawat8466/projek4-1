@@ -24,6 +24,7 @@ export async function uploadProfilePhoto(entity, identifier, file) {
 export default function ProfilePhotoField({ name, src, onFileChange }) {
   const [preview, setPreview] = useState(src || '');
   const [error, setError] = useState('');
+  const [fileName, setFileName] = useState('');
 
   useEffect(() => {
     setPreview(src || '');
@@ -38,18 +39,20 @@ export default function ProfilePhotoField({ name, src, onFileChange }) {
     if (!file) return;
     if (!allowedTypes.has(file.type) || file.size > maxBytes) {
       setError(file.size > maxBytes ? 'รูปต้องมีขนาดไม่เกิน 5 MB' : 'รองรับไฟล์ JPEG, PNG หรือ WebP');
+      setFileName('');
       onFileChange(null);
       event.target.value = '';
       return;
     }
     setError('');
+    setFileName(file.name);
     setPreview(URL.createObjectURL(file));
     onFileChange(file);
   }
 
   return <div className="profile-photo-field">
     <ProfileAvatar src={preview} name={name} className="profile-avatar-preview" />
-    <label className="profile-photo-control">รูปโปรไฟล์<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} /></label>
+    <div className="profile-photo-control"><span>รูปโปรไฟล์</span><label className="profile-photo-button">เลือกรูป<input type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} /></label><small>{fileName || 'JPEG, PNG หรือ WebP · ไม่เกิน 5 MB'}</small></div>
     {error && <small className="profile-photo-error" role="alert">{error}</small>}
   </div>;
 }

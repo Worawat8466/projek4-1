@@ -30,6 +30,44 @@ function displayDate(value) {
     : '-';
 }
 
+function PetProfileForm({ mode, pet, form, setForm, photoFile, setPhotoFile, owners, ownerQuery, setOwnerQuery, ownerMenuOpen, setOwnerMenuOpen, onSubmit, onClose }) {
+  const isEdit = mode === 'edit';
+  const filteredOwners = owners.filter((owner) => {
+    const value = ownerQuery.trim().toLowerCase();
+    return owner.name.toLowerCase().includes(value) || owner.id.toLowerCase().includes(value);
+  });
+
+  return <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <form className="customer-modal pet-form-modal" onSubmit={onSubmit}>
+      <button type="button" className="modal-close" aria-label="ปิด" onClick={onClose}>×</button>
+      <h2>{isEdit ? 'แก้ไขสัตว์เลี้ยง' : 'เพิ่มสัตว์เลี้ยง'}</h2>
+      <ProfilePhotoField name={form.name} src={isEdit ? pet.photoUrl : ''} onFileChange={setPhotoFile} />
+      <div className="pet-form-grid">
+        <label>ชื่อ<input autoFocus value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} /></label>
+        <label className="owner-field">เจ้าของ
+          <div className="owner-combobox">
+            <input value={ownerQuery} onFocus={() => setOwnerMenuOpen(true)} onChange={(event) => { setOwnerQuery(event.target.value); setOwnerMenuOpen(true); }} placeholder="ค้นหาชื่อลูกค้า..." aria-label="ค้นหาเจ้าของ" />
+            <span className="owner-chevron">⌄</span>
+            {ownerMenuOpen && <div className="owner-options">{filteredOwners.length > 0 ? filteredOwners.map((owner) => <button type="button" key={owner.id} onClick={() => { setForm((current) => ({ ...current, owner: owner.id })); setOwnerQuery(owner.name); setOwnerMenuOpen(false); }}>{owner.name}</button>) : <div className="owner-empty">ไม่พบรายชื่อลูกค้า</div>}</div>}
+          </div>
+        </label>
+        <label>ประเภทสัตว์<select value={form.species} onChange={(event) => setForm((current) => ({ ...current, species: event.target.value }))}><option>สุนัข</option><option>แมว</option><option>อื่น ๆ</option></select></label>
+        <label>สายพันธุ์<input value={form.breed} onChange={(event) => setForm((current) => ({ ...current, breed: event.target.value }))} /></label>
+        <label>ชิปไอดี<input value={form.id} onChange={(event) => setForm((current) => ({ ...current, id: event.target.value }))} /></label>
+        <label>เพศ<select value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))}><option>ชาย</option><option>หญิง</option><option>ไม่ระบุ</option></select></label>
+        <label className="birth-field">วันเกิด
+          <div>
+            <select aria-label="วันเกิด" value={form.birthDay} onChange={(event) => setForm((current) => ({ ...current, birthDay: event.target.value }))}><option value="">วัน</option>{days.map((day) => <option value={day} key={day}>{day}</option>)}</select>
+            <select aria-label="เดือนเกิด" value={form.birthMonth} onChange={(event) => setForm((current) => ({ ...current, birthMonth: event.target.value }))}><option value="">เดือน</option>{months.map((month, index) => <option value={String(index + 1).padStart(2, '0')} key={month}>{month}</option>)}</select>
+            <select aria-label="ปีเกิด" value={form.birthYear} onChange={(event) => setForm((current) => ({ ...current, birthYear: event.target.value }))}><option value="">ปี</option>{years.map((year) => <option value={year} key={year}>{year}</option>)}</select>
+          </div>
+        </label>
+      </div>
+      <button className="modal-submit pet-submit" type="submit">{isEdit ? 'บันทึกการแก้ไข' : 'เพิ่มสัตว์เลี้ยง'}</button>
+    </form>
+  </div>;
+}
+
 export default function PetsPage() {
   const [pets, setPets] = useState([]);
   const [owners, setOwners] = useState([]);
@@ -40,7 +78,7 @@ export default function PetsPage() {
   const [toast, setToast] = useState('');
   const [ownerQuery, setOwnerQuery] = useState('');
   const [ownerMenuOpen, setOwnerMenuOpen] = useState(false);
-  const [photoPetId, setPhotoPetId] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
 
   useEffect(() => {
     Promise.all([fetch('/api/pets'), fetch('/api/customers')])
@@ -48,7 +86,6 @@ export default function PetsPage() {
         const [petsResult, customersResult] = await Promise.all([petsResponse.json(), customersResponse.json()]);
         if (!petsResponse.ok || !customersResponse.ok) throw new Error('load_failed');
         setPets(petsResult.pets);
-        if (petsResult.pets.length) setPhotoPetId((current) => current || petsResult.pets[0].id);
         setOwners(customersResult.customers);
       })
       .catch(() => notify('โหลดข้อมูลสัตว์เลี้ยง/ลูกค้าจากฐานข้อมูลไม่สำเร็จ'))
@@ -58,44 +95,34 @@ export default function PetsPage() {
   const filteredOwners = useMemo(() => {
     const value = ownerQuery.trim().toLowerCase();
     return owners.filter((owner) => owner.name.toLowerCase().includes(value) || owner.id.toLowerCase().includes(value));
-  }, [ownerQuery]);
+  }, [owners, ownerQuery]);
 
   const filteredPets = useMemo(() => {
     const value = query.trim().toLowerCase();
     if (!value) return pets;
     return pets.filter((pet) => [pet.name, pet.owner, pet.breed, pet.id, pet.species].some((field) => String(field || '').toLowerCase().includes(value)));
   }, [pets, query]);
-  const selectedPhotoPet = pets.find((pet) => pet.id === photoPetId);
-
   function notify(message) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2200);
   }
 
-  async function savePetPhoto(file) {
-    if (!selectedPhotoPet || !file) return;
-    try {
-      const photoUrl = await uploadProfilePhoto('pets', selectedPhotoPet.id, file);
-      setPets((current) => current.map((pet) => pet.id === selectedPhotoPet.id ? { ...pet, photoUrl } : pet));
-      notify(`บันทึกรูปโปรไฟล์ ${selectedPhotoPet.name} แล้ว`);
-    } catch {
-      notify('บันทึกรูปไม่สำเร็จ กรุณาใช้ JPEG, PNG หรือ WebP ขนาดไม่เกิน 5 MB');
-    }
-  }
-
   function openAddModal() {
     setForm({ name: '', owner: '', breed: '', id: '', gender: 'ชาย', species: 'สุนัข', birthDay: '', birthMonth: '', birthYear: '' });
+    setPhotoFile(null);
     setOwnerQuery('');
     setOwnerMenuOpen(false);
-    setModal({ type: 'add' });
+    setModal({ type: 'profile', mode: 'add' });
   }
 
   function openEditModal(pet) {
     const [year, month, day] = String(pet.birth || '').split('-');
-    setForm({ name: pet.name, owner: pet.ownerCode, breed: pet.breed, id: pet.id, gender: pet.gender, species: pet.species || 'สุนัข', birthDay: day || '', birthMonth: month || '', birthYear: year ? String(Number(year) + 543) : '' });
+    const species = pet.species === 'Cat' ? 'แมว' : pet.species === 'Dog' ? 'สุนัข' : pet.species ? 'อื่น ๆ' : 'สุนัข';
+    setForm({ name: pet.name, owner: pet.ownerCode, breed: pet.breed, id: pet.id, gender: pet.gender, species, birthDay: day || '', birthMonth: month || '', birthYear: year ? String(Number(year) + 543) : '' });
+    setPhotoFile(null);
     setOwnerQuery(pet.owner);
     setOwnerMenuOpen(false);
-    setModal({ type: 'edit', pet });
+    setModal({ type: 'profile', mode: 'edit', pet });
   }
 
   async function savePet(event) {
@@ -109,17 +136,29 @@ export default function PetsPage() {
       ? `${birthYear}-${String(form.birthMonth).padStart(2, '0')}-${String(form.birthDay).padStart(2, '0')}`
       : null;
     const petData = { id: form.id.trim(), name: form.name.trim(), ownerCode: form.owner, species: form.species, breed: form.breed.trim(), gender: form.gender, birth };
+    const isEdit = modal.mode === 'edit';
     try {
-      const response = await fetch(modal.type === 'edit' ? `/api/pets/${encodeURIComponent(modal.pet.id)}` : '/api/pets', {
-        method: modal.type === 'edit' ? 'PUT' : 'POST',
+      const response = await fetch(isEdit ? `/api/pets/${encodeURIComponent(modal.pet.id)}` : '/api/pets', {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(petData)
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'save_failed');
-      if (modal.type === 'edit') setPets((current) => current.map((pet) => pet.id === modal.pet.id ? result.pet : pet));
-      else setPets((current) => [...current, result.pet]);
-      notify(modal.type === 'edit' ? 'แก้ไขข้อมูลสัตว์เลี้ยงแล้ว' : 'เพิ่มสัตว์เลี้ยงใหม่แล้ว');
+      let savedPet = result.pet;
+      let photoSaved = true;
+      if (photoFile) {
+        try {
+          savedPet = { ...savedPet, photoUrl: await uploadProfilePhoto('pets', savedPet.id, photoFile) };
+        } catch {
+          photoSaved = false;
+        }
+      }
+      if (isEdit) setPets((current) => current.map((pet) => pet.id === modal.pet.id ? savedPet : pet));
+      else setPets((current) => [...current, savedPet]);
+      notify(photoSaved
+        ? isEdit ? 'แก้ไขข้อมูลสัตว์เลี้ยงแล้ว' : 'เพิ่มสัตว์เลี้ยงใหม่แล้ว'
+        : 'บันทึกข้อมูลสัตว์เลี้ยงแล้ว แต่บันทึกรูปไม่สำเร็จ');
       setModal(null);
     } catch (error) {
       notify(error.message === 'customer_not_found' ? 'ไม่พบข้อมูลเจ้าของในฐานข้อมูล' : 'บันทึกสัตว์เลี้ยงไม่สำเร็จ');
@@ -145,11 +184,11 @@ export default function PetsPage() {
     </aside>
     <main className="pets-main">
       <header className="pets-header"><h1>สัตว์เลี้ยง</h1><button className="add-customer-button" onClick={openAddModal}><span>+</span> เพิ่มสัตว์เลี้ยง</button></header>
-      {selectedPhotoPet && <section className="profile-photo-manager"><label>โปรไฟล์สัตว์เลี้ยง<select value={photoPetId} onChange={(event) => setPhotoPetId(event.target.value)}>{pets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name} · {pet.owner}</option>)}</select></label><ProfilePhotoField key={selectedPhotoPet.id} name={selectedPhotoPet.name} src={selectedPhotoPet.photoUrl} onFileChange={savePetPhoto} /></section>}
-      <label className="customer-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อ เบอร์โทร..." /></label>
+      <label className="customer-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อสัตว์ เจ้าของ สายพันธุ์ หรือชิปไอดี..." /></label>
       <section className="pets-table-wrap"><table className="pets-table"><thead><tr><th>สัตว์เลี้ยง</th><th>เจ้าของ</th><th>ประเภท</th><th>สายพันธุ์</th><th>ชิปไอดี</th><th>เพศ</th><th>วันเกิด</th><th>จัดการ</th></tr></thead><tbody>{filteredPets.map((pet) => <tr key={pet.id}><td><div className="profile-name-cell"><ProfileAvatar src={pet.photoUrl} name={pet.name} />{pet.name}</div></td><td>{pet.owner}</td><td>{pet.species}</td><td>{pet.breed}</td><td className="mono">{pet.id}</td><td><span className={`gender-badge ${pet.gender === 'หญิง' ? 'female' : 'male'}`}>{pet.gender === 'หญิง' ? 'F' : 'M'}</span></td><td>{pet.birth ? displayDate(pet.birth) : '-'}</td><td><div className="customer-row-actions"><button className="edit-action" aria-label={`แก้ไข ${pet.name}`} title="แก้ไข" onClick={() => openEditModal(pet)}><EditIcon /></button><button className="delete-action" aria-label={`ลบ ${pet.name}`} title="ลบ" onClick={() => setModal({ type: 'delete', pet })}><DeleteIcon /></button></div></td></tr>)}</tbody></table>{!loading && filteredPets.length === 0 && <div className="customer-empty">{query ? 'ไม่พบข้อมูลสัตว์เลี้ยง' : 'ยังไม่มีสัตว์เลี้ยงในฐานข้อมูล'}</div>}</section>
       {(modal?.type === 'add' || modal?.type === 'edit') && <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><form className="customer-modal pet-form-modal" onSubmit={savePet}><button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button><h2>{modal.type === 'edit' ? 'แก้ไข' : 'เพิ่มสัตว์เลี้ยง'}</h2><div className="pet-form-grid"><label>ชื่อ<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="owner-field">เจ้าของ<div className="owner-combobox"><input value={ownerQuery} onFocus={() => setOwnerMenuOpen(true)} onChange={(event) => { setOwnerQuery(event.target.value); setOwnerMenuOpen(true); }} placeholder="ค้นหาชื่อลูกค้า..." aria-label="ค้นหาเจ้าของ" /><span className="owner-chevron">⌄</span>{ownerMenuOpen && <div className="owner-options">{filteredOwners.length > 0 ? filteredOwners.map((owner) => <button type="button" key={owner.id} onClick={() => { setForm({ ...form, owner: owner.id }); setOwnerQuery(owner.name); setOwnerMenuOpen(false); }}>{owner.name}</button>) : <div className="owner-empty">ไม่พบรายชื่อลูกค้า</div>}</div>}</div></label><label>ประเภทสัตว์<select value={form.species} onChange={(event) => setForm({ ...form, species: event.target.value })}><option>สุนัข</option><option>แมว</option><option>อื่น ๆ</option></select></label><label>สายพันธุ์<input value={form.breed} onChange={(event) => setForm({ ...form, breed: event.target.value })} /></label><label>ชิปไอดี<input value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} /></label><label>เพศ<select value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value })}><option>ชาย</option><option>หญิง</option><option>ไม่ระบุ</option></select></label><label className="birth-field">วันเกิด<div><select aria-label="วันเกิด" value={form.birthDay} onChange={(event) => setForm({ ...form, birthDay: event.target.value })}><option value="">วัน</option>{days.map((day) => <option value={day} key={day}>{day}</option>)}</select><select aria-label="เดือนเกิด" value={form.birthMonth} onChange={(event) => setForm({ ...form, birthMonth: event.target.value })}><option value="">เดือน</option>{months.map((month, index) => <option value={String(index + 1).padStart(2, '0')} key={month}>{month}</option>)}</select><select aria-label="ปีเกิด" value={form.birthYear} onChange={(event) => setForm({ ...form, birthYear: event.target.value })}><option value="">ปี</option>{years.map((year) => <option value={year} key={year}>{year}</option>)}</select></div></label></div><button className="modal-submit pet-submit">{modal.type === 'edit' ? 'บันทึกการแก้ไข' : 'เพิ่มสัตว์เลี้ยง'}</button></form></div>}
     </main>
+    {modal?.type === 'profile' && <PetProfileForm mode={modal.mode} pet={modal.pet} form={form} setForm={setForm} photoFile={photoFile} setPhotoFile={setPhotoFile} owners={owners} ownerQuery={ownerQuery} setOwnerQuery={setOwnerQuery} ownerMenuOpen={ownerMenuOpen} setOwnerMenuOpen={setOwnerMenuOpen} onSubmit={savePet} onClose={() => setModal(null)} />}
     {toast && <div className="toast"><b>OK</b>{toast}</div>}
     {modal?.type === 'delete' && <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><div className="customer-modal delete-modal"><button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button><h2>ยืนยันการลบ</h2><p>ต้องการลบข้อมูล {modal.pet.name} หรือไม่</p><div className="delete-modal-actions"><button type="button" className="modal-submit" onClick={confirmDelete}>ยืนยัน</button><button type="button" className="modal-cancel" onClick={() => setModal(null)}>ยกเลิก</button></div></div></div>}
     {(modal?.type === 'add' || modal?.type === 'edit') && <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><form className="customer-modal pet-form-modal" onSubmit={savePet}><button type="button" className="modal-close" aria-label="ปิด" onClick={() => setModal(null)}>×</button><h2>{modal.type === 'edit' ? 'แก้ไข' : 'เพิ่มสัตว์เลี้ยง'}</h2><div className="pet-form-grid"><label>ชื่อ<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="owner-field">เจ้าของ<div className="owner-combobox"><input value={ownerQuery} onFocus={() => setOwnerMenuOpen(true)} onChange={(event) => { setOwnerQuery(event.target.value); setOwnerMenuOpen(true); }} placeholder="ค้นหาเจ้าของ..." aria-label="ค้นหาเจ้าของ" /><span className="owner-chevron">⌄</span>{ownerMenuOpen && <div className="owner-options">{filteredOwners.length > 0 ? filteredOwners.map((owner) => <button type="button" key={owner} onClick={() => { setForm({ ...form, owner }); setOwnerQuery(owner); setOwnerMenuOpen(false); }}>{owner}</button>) : <div className="owner-empty">ไม่พบรายชื่อลูกค้า</div>}</div>}</div></label><label>สายพันธุ์<input value={form.breed} onChange={(event) => setForm({ ...form, breed: event.target.value })} /></label><label>ชิปไอดี<input value={form.id} onChange={(event) => setForm({ ...form, id: event.target.value })} /></label><label>เพศ<select value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value })}><option>ชาย</option><option>หญิง</option></select></label><label className="birth-field">วันเกิด<div><select aria-label="วันเกิด" value={form.birthDay} onChange={(event) => setForm({ ...form, birthDay: event.target.value })}><option value="">วัน</option>{days.map((day) => <option value={day} key={day}>{day}</option>)}</select><select aria-label="เดือนเกิด" value={form.birthMonth} onChange={(event) => setForm({ ...form, birthMonth: event.target.value })}><option value="">เดือน</option>{months.map((month, index) => <option value={String(index + 1).padStart(2, '0')} key={month}>{month}</option>)}</select><select aria-label="ปีเกิด" value={form.birthYear} onChange={(event) => setForm({ ...form, birthYear: event.target.value })}><option value="">ปี</option>{years.map((year) => <option value={year} key={year}>{year}</option>)}</select></div></label></div><button className="modal-submit pet-submit" type="submit">{modal.type === 'edit' ? 'แก้ไข' : 'เพิ่ม'}</button></form></div>}
