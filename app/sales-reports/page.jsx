@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -9,8 +9,10 @@ const menuItems = [
 ];
 
 const periodOptions = [
-  ['today', 'วันนี้'], ['7d', '7 วัน'], ['month', 'เดือนนี้'], ['custom', 'กำหนดเอง']
+  ['today', 'วันนี้'], ['7d', '7 วัน'], ['month', 'เดือนนี้'], ['all', 'ทั้งหมด'], ['custom', 'กำหนดเอง']
 ];
+
+const historyPageSize = 10;
 
 function localDateKey(date) {
   const year = date.getFullYear();
@@ -89,6 +91,9 @@ export default function SalesReportsPage() {
   const [period, setPeriod] = useState('month');
   const [customFrom, setCustomFrom] = useState(() => localDateKey(new Date()));
   const [customTo, setCustomTo] = useState(() => localDateKey(new Date()));
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [expandedSaleId, setExpandedSaleId] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -112,8 +117,12 @@ export default function SalesReportsPage() {
       return { from: localDateKey(firstDay), to };
     }
     if (period === 'month') return { from: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`, to };
+    if (period === 'all') {
+      const saleDays = sales.map((sale) => new Date(sale.soldAt)).filter((date) => !Number.isNaN(date.getTime())).map(localDateKey).sort();
+      return { from: saleDays[0] || to, to };
+    }
     return { from: customFrom, to: customTo };
-  }, [period, customFrom, customTo]);
+  }, [period, customFrom, customTo, sales]);
   const rangeLabel = useMemo(() => {
     if (!dateRange.from || !dateRange.to || dateRange.from > dateRange.to) return 'เลือกวันที่ให้ครบ';
     const from = new Date(`${dateRange.from}T00:00:00`);
@@ -175,6 +184,16 @@ export default function SalesReportsPage() {
   const recentSales = useMemo(() => [...filteredSales]
     .sort((first, second) => new Date(second.soldAt) - new Date(first.soldAt))
     .slice(0, 8), [filteredSales]);
+
+  const historySales = useMemo(() => {
+    const value = historyQuery.trim().toLowerCase();
+    return [...filteredSales]
+      .sort((first, second) => new Date(second.soldAt) - new Date(first.soldAt))
+      .filter((sale) => !value || [sale.id, sale.customerName].some((field) => String(field || '').toLowerCase().includes(value)));
+  }, [filteredSales, historyQuery]);
+  const historyPageCount = Math.max(1, Math.ceil(historySales.length / historyPageSize));
+  const currentHistoryPage = Math.min(historyPage, historyPageCount);
+  const pagedHistory = historySales.slice((currentHistoryPage - 1) * historyPageSize, currentHistoryPage * historyPageSize);
 
   return <div className="sales-reports-page">
     <aside className="sidebar">
@@ -247,6 +266,45 @@ export default function SalesReportsPage() {
             </tr>)}</tbody>
           </table></div> : <div className="sales-empty-small">ยังไม่มีบิลขายในช่วงนี้ เมื่อปิดบิลจากหน้าร้าน รายการจะแสดงที่นี่</div>}
         </article>
+      </section>
+      <section className="sales-panel sales-history-panel" aria-label="ประวัติการขาย">
+        <div className="sales-panel-heading">
+          <div><h2>ประวัติการขาย</h2><p>{historySales.length.toLocaleString('th-TH')} บิลในช่วงเวลาที่เลือก</p></div>
+          <label className="sales-history-search">
+            <input value={historyQuery} onChange={(event) => { setHistoryQuery(event.target.value); setHistoryPage(1); }} placeholder="ค้นหาเลขที่บิล หรือชื่อลูกค้า" aria-label="ค้นหาประวัติการขาย" />
+          </label>
+        </div>
+        {pagedHistory.length > 0 ? <div className="sales-table-wrap"><table className="sales-table sales-history-table">
+          <thead><tr><th><span className="sr-only">รายละเอียด</span></th><th>เลขที่บิล / เวลา</th><th>ลูกค้า</th><th>ชำระโดย</th><th>ส่วนลด</th><th>ยอดชำระ</th></tr></thead>
+          <tbody>{pagedHistory.map((sale) => {
+            const expanded = expandedSaleId === sale.saleId;
+            const items = Array.isArray(sale.items) ? sale.items : [];
+            return <Fragment key={sale.saleId}>
+              <tr className={expanded ? 'is-expanded' : ''}>
+                <td><button className="sales-history-toggle" type="button" aria-expanded={expanded} aria-label={`${expanded ? 'ซ่อน' : 'ดู'}รายการในบิล ${sale.id}`} onClick={() => setExpandedSaleId(expanded ? null : sale.saleId)}>{expanded ? '−' : '+'}</button></td>
+                <td><b>{sale.id}</b><small>{formatDate(new Date(sale.soldAt), { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></td>
+                <td>{sale.customerName || 'ลูกค้าทั่วไป'}</td><td>{sale.paymentMethod || '-'}</td>
+                <td>{sale.discount ? formatMoney(sale.discount) : '-'}</td>
+                <td className="sales-table-total">{formatMoney(sale.total)}</td>
+              </tr>
+              {expanded && <tr className="sales-history-detail"><td colSpan={6}>
+                <table className="sales-history-items">
+                  <thead><tr><th>รายการ</th><th>สัตว์เลี้ยง</th><th>จำนวน</th><th>ราคาต่อหน่วย</th><th>รวม</th></tr></thead>
+                  <tbody>{items.map((item) => <tr key={item.id}>
+                    <td>{item.name}</td><td>{item.petName || '-'}</td>
+                    <td>{Number(item.quantity).toLocaleString('th-TH')} {item.unitName}</td>
+                    <td>{formatMoney(item.unitPrice)}</td><td>{formatMoney(item.lineTotal)}</td>
+                  </tr>)}</tbody>
+                </table>
+              </td></tr>}
+            </Fragment>;
+          })}</tbody>
+        </table></div> : <div className="sales-empty-small">{historyQuery ? 'ไม่พบบิลที่ค้นหาในช่วงเวลานี้' : 'ยังไม่มีบิลขายในช่วงนี้'}</div>}
+        {historySales.length > historyPageSize && <div className="sales-history-pagination">
+          <button type="button" disabled={currentHistoryPage <= 1} onClick={() => setHistoryPage(currentHistoryPage - 1)}>ก่อนหน้า</button>
+          <span>หน้า {currentHistoryPage} / {historyPageCount}</span>
+          <button type="button" disabled={currentHistoryPage >= historyPageCount} onClick={() => setHistoryPage(currentHistoryPage + 1)}>ถัดไป</button>
+        </div>}
       </section>
       {dataError && <p className="sales-report-note" role="alert">{dataError}</p>}
       <p className="sales-report-note">รายงานจาก Oracle Database · ต้นทุนอ้างอิงราคาทุนของล็อตที่ขาย</p>

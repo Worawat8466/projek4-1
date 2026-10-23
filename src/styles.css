@@ -2404,6 +2404,22 @@ body {
 .sales-table td:first-child b { color: #26394d; font: 11px "JetBrains Mono", monospace; }
 .sales-table td:first-child small { margin-top: 3px; color: #8794a1; font: 10px Prompt, sans-serif; }
 .sales-table-total { color: #1a7e45 !important; font: 600 12px "JetBrains Mono", monospace !important; text-align: right; }
+.sales-history-panel { margin-top: 14px; }
+.sales-history-search input { width: min(280px, 100%); min-height: 34px; padding: 0 11px; border: 1px solid #d5dee5; border-radius: 6px; font: 12px Prompt, sans-serif; }
+.sales-history-table td:first-child { width: 44px; }
+.sales-history-table td:nth-child(2) b, .sales-history-table td:nth-child(2) small { display: block; }
+.sales-history-table td:nth-child(2) b { color: #26394d; font: 11px "JetBrains Mono", monospace; }
+.sales-history-table td:nth-child(2) small { margin-top: 3px; color: #8794a1; font: 10px Prompt, sans-serif; }
+.sales-history-toggle { width: 26px; height: 26px; border: 1px solid #d5dee5; border-radius: 5px; background: #fff; color: #526477; font: 15px/1 Prompt, sans-serif; cursor: pointer; }
+.sales-history-table tr.is-expanded td { background: #f8fafb; }
+.sales-history-detail td { padding: 0 12px 12px 56px; background: #f8fafb; }
+.sales-history-items { width: 100%; border-collapse: collapse; }
+.sales-history-items th { height: 30px; color: #8491a0; font-size: 10px; font-weight: 500; text-align: left; }
+.sales-history-items td { height: 34px; border-top: 1px solid #e6ecf0; color: #4b5d6f; font-size: 11px; }
+.sales-history-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 12px; color: #6b7b8a; font-size: 12px; }
+.sales-history-pagination button { min-height: 30px; padding: 0 12px; border: 1px solid #d5dee5; border-radius: 6px; background: #fff; color: #36506a; font: 12px Prompt, sans-serif; cursor: pointer; }
+.sales-history-pagination button:disabled { opacity: .45; cursor: default; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .sales-report-note { margin: -5px 0 0; color: #8592a0; font-size: 10px; }
 @media (max-width: 1150px) {
   .sales-report-main { padding: 24px 20px; }
