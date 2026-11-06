@@ -76,7 +76,7 @@ export async function setupAdmin(input) {
     if (!roleResult.rows[0]) throw Object.assign(new Error('admin_role_missing'), { code: 'AUTH_NOT_CONFIGURED' });
     const existing = await connection.execute(
       `SELECT COUNT(*) AS ADMIN_COUNT FROM staff s JOIN staff_roles r ON r.role_id = s.role_id
-        WHERE r.role_code = 'ADMIN' AND s.password_hash IS NOT NULL`,
+        WHERE r.role_code = 'ADMIN' AND s.is_active = 'Y' AND s.password_hash IS NOT NULL`,
       [], objectRows
     );
     if (Number(existing.rows[0].ADMIN_COUNT) > 0) {
@@ -91,22 +91,37 @@ export async function setupAdmin(input) {
       pinHash,
       recoveryCodeHash
     };
-    console.log('[auth-setup-binds]', {
-      roleIdPresent: staffBinds.roleId != null,
-      firstNamePresent: Boolean(staffBinds.firstName),
-      lastNamePresent: Boolean(staffBinds.lastName),
-      lastNameType: typeof staffBinds.lastName
-    });
-    await connection.execute(
-      `INSERT INTO staff (role_id, first_name, last_name, email, password_hash, pin_hash, recovery_code_hash)
-       VALUES (:roleId, :firstName, :lastName, :email, :passwordHash, :pinHash, :recoveryCodeHash)`,
-      staffBinds
+    const existingAccount = await connection.execute(
+      `SELECT s.staff_id, s.is_active, r.role_code FROM staff s
+         JOIN staff_roles r ON r.role_id = s.role_id WHERE LOWER(s.email) = :email FOR UPDATE`,
+      { email }, objectRows
     );
-    const staffResult = await connection.execute(
-      'SELECT staff_id FROM staff WHERE email = :email', { email }, objectRows
-    );
-    await writeAuditLog(connection, staffResult.rows[0].STAFF_ID, 'ADMIN_SETUP', 'STAFF', staffResult.rows[0].STAFF_ID);
-    const token = await createSession(connection, staffResult.rows[0].STAFF_ID);
+    let staffId;
+    if (existingAccount.rows[0]) {
+      if (existingAccount.rows[0].ROLE_CODE !== 'ADMIN') {
+        throw Object.assign(new Error('email_already_in_use'), { code: 'DUPLICATE_EMAIL' });
+      }
+      staffId = existingAccount.rows[0].STAFF_ID;
+      await connection.execute(
+        `UPDATE staff SET role_id = :roleId, first_name = :firstName, last_name = :lastName,
+                password_hash = :passwordHash, pin_hash = :pinHash, recovery_code_hash = :recoveryCodeHash,
+                is_active = 'Y', recovery_used_at = NULL, updated_at = SYSTIMESTAMP
+          WHERE staff_id = :staffId`,
+        { ...staffBinds, staffId }
+      );
+    } else {
+      await connection.execute(
+        `INSERT INTO staff (role_id, first_name, last_name, email, password_hash, pin_hash, recovery_code_hash)
+         VALUES (:roleId, :firstName, :lastName, :email, :passwordHash, :pinHash, :recoveryCodeHash)`,
+        staffBinds
+      );
+      const staffResult = await connection.execute(
+        'SELECT staff_id FROM staff WHERE email = :email', { email }, objectRows
+      );
+      staffId = staffResult.rows[0].STAFF_ID;
+    }
+    await writeAuditLog(connection, staffId, 'ADMIN_SETUP', 'STAFF', Number(staffId));
+    const token = await createSession(connection, staffId);
     return { token, recoveryCode };
   });
 }
@@ -214,6 +229,33 @@ export async function rotateAdminRecoveryCode(token, input) {
     );
     await writeAuditLog(connection, staff.STAFF_ID, 'RECOVERY_CODE_ROTATED', 'STAFF', staff.STAFF_ID);
     return { recoveryCode };
+  });
+}
+
+export async function resetAdminSetup(token, input) {
+  return withOracleTransaction(async (connection) => {
+    const result = await connection.execute(
+      `SELECT s.staff_id, s.password_hash, r.role_code FROM auth_sessions a
+         JOIN staff s ON s.staff_id = a.staff_id
+         JOIN staff_roles r ON r.role_id = s.role_id
+        WHERE a.token_hash = :tokenHash AND a.expires_at > SYSTIMESTAMP AND s.is_active = 'Y'
+        FOR UPDATE OF s.password_hash`,
+      { tokenHash: hashToken(token) }, objectRows
+    );
+    const staff = result.rows[0];
+    if (!staff || staff.ROLE_CODE !== 'ADMIN' || !(await verifySecret(input.currentPassword || '', staff.PASSWORD_HASH))) {
+      throw Object.assign(new Error('invalid_credentials'), { code: 'INVALID_CREDENTIALS' });
+    }
+    await writeAuditLog(connection, staff.STAFF_ID, 'ADMIN_SETUP_RESET', 'STAFF', staff.STAFF_ID, {
+      businessDataPreserved: true
+    });
+    await connection.execute(
+      `UPDATE staff s
+          SET is_active = 'N', password_hash = NULL, pin_hash = NULL, recovery_code_hash = NULL,
+              updated_at = SYSTIMESTAMP
+        WHERE EXISTS (SELECT 1 FROM staff_roles r WHERE r.role_id = s.role_id AND r.role_code = 'ADMIN')`
+    );
+    await connection.execute('DELETE FROM auth_sessions');
   });
 }
 

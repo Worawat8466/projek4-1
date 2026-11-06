@@ -68,7 +68,11 @@ export default function LoginPage() {
       setMessage('');
       setMode('recovery-code');
     } catch (error) {
-      showError(error.message === 'setup_complete' ? 'มีบัญชีผู้ดูแลอยู่แล้ว กรุณาเข้าสู่ระบบ' : 'ตั้งค่าไม่สำเร็จ กรุณาตรวจอีเมลและการเชื่อมต่อฐานข้อมูล');
+      showError(error.message === 'setup_complete'
+        ? 'มีบัญชีผู้ดูแลอยู่แล้ว กรุณาเข้าสู่ระบบ'
+        : error.message === 'duplicate_email'
+          ? 'อีเมลนี้เป็นบัญชีพนักงานอยู่แล้ว กรุณาใช้อีเมลอื่น'
+          : 'ตั้งค่าไม่สำเร็จ กรุณาตรวจอีเมลและการเชื่อมต่อฐานข้อมูล');
     }
   }
 

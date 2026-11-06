@@ -69,7 +69,7 @@ export default function SettingsPage() {
 
   async function submitSecurityChange(event) {
     event.preventDefault();
-    const action = securityModal === 'recovery' ? 'rotate-recovery-code' : 'change-admin-credentials';
+    const action = securityModal === 'recovery' ? 'rotate-recovery-code' : securityModal === 'setup-reset' ? 'reset-admin-setup' : 'change-admin-credentials';
     const payload = { action, currentPassword: securityForm.currentPassword };
     if (securityModal === 'password') payload.password = securityForm.password;
     if (securityModal === 'pin') payload.pin = securityForm.pin;
@@ -79,6 +79,10 @@ export default function SettingsPage() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'security_change_failed');
+      if (securityModal === 'setup-reset') {
+        window.location.assign('/login');
+        return;
+      }
       if (result.recoveryCode) {
         setNewRecoveryCode(result.recoveryCode);
         setSecurityModal('recovery-result');
@@ -215,6 +219,7 @@ export default function SettingsPage() {
             <button type="button" onClick={() => openSecurityModal('password')}>เปลี่ยนรหัสผ่านบัญชีผู้ดูแล</button>
             <button type="button" onClick={() => openSecurityModal('pin')}>เปลี่ยน PIN ผู้ดูแล</button>
             <button type="button" onClick={() => openSecurityModal('recovery')}>ออก Recovery Code ใหม่</button>
+            <button type="button" onClick={() => openSecurityModal('setup-reset')}>กลับไปหน้า Setup ครั้งแรก</button>
             <button type="button" onClick={exportSettings}>Export ตั้งค่า</button>
             <button type="button" onClick={() => importInput.current?.click()}>Import ตั้งค่า</button>
             <input ref={importInput} className="settings-import-input" type="file" accept="application/json,.json" onChange={importSettings} />
@@ -244,7 +249,8 @@ export default function SettingsPage() {
           <code className="recovery-code-value">{newRecoveryCode}</code>
           <button type="button" className="modal-submit" onClick={() => setSecurityModal(null)}>เรียบร้อย</button>
         </> : <form onSubmit={submitSecurityChange}>
-          <h2 id="security-modal-title">{securityModal === 'password' ? 'เปลี่ยนรหัสผ่านบัญชีผู้ดูแล' : securityModal === 'pin' ? 'เปลี่ยน PIN ผู้ดูแล' : 'ออก Recovery Code ใหม่'}</h2>
+          <h2 id="security-modal-title">{securityModal === 'password' ? 'เปลี่ยนรหัสผ่านบัญชีผู้ดูแล' : securityModal === 'pin' ? 'เปลี่ยน PIN ผู้ดูแล' : securityModal === 'setup-reset' ? 'กลับไปหน้า Setup ครั้งแรก' : 'ออก Recovery Code ใหม่'}</h2>
+          {securityModal === 'setup-reset' && <p>ระบบจะปิดบัญชีผู้ดูแลและออกจากทุก session เพื่อให้ตั้ง Admin ใหม่ ข้อมูลลูกค้า สัตว์เลี้ยง สินค้า สต็อก และยอดขายจะไม่ถูกลบ</p>}
           <label>รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={securityForm.currentPassword} onChange={(event) => setSecurityForm({ ...securityForm, currentPassword: event.target.value })} /></label>
           {securityModal === 'password' && <label>รหัสผ่านใหม่<input required minLength="8" type="password" autoComplete="new-password" value={securityForm.password} onChange={(event) => setSecurityForm({ ...securityForm, password: event.target.value })} /></label>}
           {securityModal === 'pin' && <label>PIN ใหม่ (4–6 หลัก)<input required inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" type="password" autoComplete="new-password" value={securityForm.pin} onChange={(event) => setSecurityForm({ ...securityForm, pin: event.target.value.replace(/\D/g, '') })} /></label>}

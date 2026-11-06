@@ -5,6 +5,7 @@ import {
   getSessionIdentity,
   loginStaff,
   recoverStaffAccount,
+  resetAdminSetup,
   rotateAdminRecoveryCode,
   setupAdmin
 } from '../../../src/server/authRepository.js';
@@ -27,6 +28,7 @@ function errorResponse(error) {
     ORACLE_NOT_CONFIGURED: 503,
     AUTH_NOT_CONFIGURED: 503,
     SETUP_COMPLETE: 409,
+    DUPLICATE_EMAIL: 409,
     INVALID_CREDENTIALS: 401,
     INVALID_RECOVERY_CODE: 400
   }[error.code] || 500;
@@ -47,12 +49,18 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const input = await request.json();
-    if (input.action === 'change-admin-credentials' || input.action === 'rotate-recovery-code') {
+    if (input.action === 'change-admin-credentials' || input.action === 'rotate-recovery-code' || input.action === 'reset-admin-setup') {
       const token = getSessionToken(request);
       const identity = await getSessionIdentity(token);
       if (!identity || identity.roleCode !== 'ADMIN') return Response.json({ error: 'forbidden' }, { status: 403 });
       if (input.action === 'change-admin-credentials') {
         return Response.json(await changeAdminCredentials(token, input));
+      }
+      if (input.action === 'reset-admin-setup') {
+        await resetAdminSetup(token, input);
+        return Response.json({ ok: true }, {
+          headers: { 'Set-Cookie': `${cookieName}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}` }
+        });
       }
       return Response.json(await rotateAdminRecoveryCode(token, input));
     }
