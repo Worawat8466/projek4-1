@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -178,7 +179,7 @@ export default function SalesReportsPage() {
         products.set(item.productId, product);
       }
     }
-    return [...products.values()].sort((first, second) => second.quantity - first.quantity).slice(0, 5);
+    return [...products.values()].sort((first, second) => second.quantity - first.quantity).slice(0, 10);
   }, [filteredSales]);
 
   const recentSales = useMemo(() => [...filteredSales]
@@ -198,7 +199,7 @@ export default function SalesReportsPage() {
   return <div className="sales-reports-page">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={label === 'สรุปยอดขาย' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="สรุปยอดขาย" />
     </aside>
 
     <main className="sales-report-main">
@@ -275,19 +276,25 @@ export default function SalesReportsPage() {
           </label>
         </div>
         {pagedHistory.length > 0 ? <div className="sales-table-wrap"><table className="sales-table sales-history-table">
-          <thead><tr><th><span className="sr-only">รายละเอียด</span></th><th>เลขที่บิล / เวลา</th><th>ลูกค้า</th><th>ชำระโดย</th><th>ส่วนลด</th><th>ยอดชำระ</th></tr></thead>
+          <thead><tr><th><span className="sr-only">รายละเอียด</span></th><th>เลขที่บิล / เวลา</th><th>ลูกค้า</th><th>ชำระโดย</th><th>ส่วนลด</th><th>กำไรขั้นต้น</th><th>ยอดชำระ</th></tr></thead>
           <tbody>{pagedHistory.map((sale) => {
             const expanded = expandedSaleId === sale.saleId;
             const items = Array.isArray(sale.items) ? sale.items : [];
+            const productItems = items.filter((item) => item.type === 'สินค้า');
+            const costComplete = productItems.every((item) => Number.isFinite(item.unitCost));
+            const saleProfit = costComplete
+              ? getNetSales(sale) - productItems.reduce((sum, item) => sum + Number(item.unitCost || 0) * Number(item.quantity || 0), 0)
+              : null;
             return <Fragment key={sale.saleId}>
               <tr className={expanded ? 'is-expanded' : ''}>
                 <td><button className="sales-history-toggle" type="button" aria-expanded={expanded} aria-label={`${expanded ? 'ซ่อน' : 'ดู'}รายการในบิล ${sale.id}`} onClick={() => setExpandedSaleId(expanded ? null : sale.saleId)}>{expanded ? '−' : '+'}</button></td>
                 <td><b>{sale.id}</b><small>{formatDate(new Date(sale.soldAt), { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></td>
                 <td>{sale.customerName || 'ลูกค้าทั่วไป'}</td><td>{sale.paymentMethod || '-'}</td>
                 <td>{sale.discount ? formatMoney(sale.discount) : '-'}</td>
+                <td>{saleProfit == null ? 'รอต้นทุน' : formatMoney(saleProfit)}</td>
                 <td className="sales-table-total">{formatMoney(sale.total)}</td>
               </tr>
-              {expanded && <tr className="sales-history-detail"><td colSpan={6}>
+              {expanded && <tr className="sales-history-detail"><td colSpan={7}>
                 <table className="sales-history-items">
                   <thead><tr><th>รายการ</th><th>สัตว์เลี้ยง</th><th>จำนวน</th><th>ราคาต่อหน่วย</th><th>รวม</th></tr></thead>
                   <tbody>{items.map((item) => <tr key={item.id}>

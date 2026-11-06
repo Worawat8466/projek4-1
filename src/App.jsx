@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import generatePayload from 'promptpay-qr';
+import QRCode from 'qrcode';
 import { defaultSettings } from './appSettings.js';
 import { ProfileAvatar } from './ProfilePhotoField.jsx';
+import RoleAwareNavigation from './RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'],
@@ -48,6 +51,7 @@ export default function App() {
   const [dataError, setDataError] = useState('');
   const [savingSale, setSavingSale] = useState(false);
   const [receipt, setReceipt] = useState(null);
+  const [currentStaff, setCurrentStaff] = useState(null);
   const [query, setQuery] = useState('');
   const barcodeInputRef = useRef(null);
   const [category, setCategory] = useState('all');
@@ -56,6 +60,9 @@ export default function App() {
   const [petMenuOpen, setPetMenuOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
+  const [cashReceived, setCashReceived] = useState('');
+  const [promptPayQr, setPromptPayQr] = useState('');
+  const [promptPayQrError, setPromptPayQrError] = useState('');
   const [screenLocked, setScreenLocked] = useState(false);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
@@ -67,16 +74,17 @@ export default function App() {
     let active = true;
     async function loadPosData() {
       try {
-        const endpoints = ['/api/products', '/api/inventory/lots', '/api/customers', '/api/pets', '/api/settings'];
+        const endpoints = ['/api/products', '/api/inventory/lots', '/api/customers', '/api/pets', '/api/settings', '/api/auth'];
         const responses = await Promise.all(endpoints.map((endpoint) => fetch(endpoint)));
         if (responses.some((response) => !response.ok)) throw new Error('database_unavailable');
-        const [productData, inventoryData, customerData, petData, settingsData] = await Promise.all(responses.map((response) => response.json()));
+        const [productData, inventoryData, customerData, petData, settingsData, authData] = await Promise.all(responses.map((response) => response.json()));
         if (!active) return;
         setProducts(productData.products);
         setInventory(inventoryData.lots);
         setCustomers(customerData.customers);
         setPets(petData.pets);
         setAppSettings(settingsData.settings);
+        setCurrentStaff(authData.session);
         setDataError('');
       } catch {
         if (active) setDataError('เชื่อมต่อฐานข้อมูลไม่ได้ รายการขายถูกปิดไว้');
@@ -109,14 +117,44 @@ export default function App() {
   const taxableAmount = Math.max(0, totals.subtotal - discount);
   const tax = appSettings.vatEnabled ? Math.round(taxableAmount * (Number(appSettings.vatRate) || 0)) / 100 : 0;
   const net = taxableAmount + tax;
+  const receivedAmount = Number(cashReceived || net);
+  const changeDue = Math.max(0, receivedAmount - net);
   const filteredCustomers = useMemo(() => {
     const value = customerQuery.trim().toLowerCase();
     return customers.filter((customer) => !value || [customer.name, customer.phone, customer.id].some((field) => String(field || '').toLowerCase().includes(value)));
   }, [customers, customerQuery]);
 
+  useEffect(() => {
+    if (paymentMethod !== 'พร้อมเพย์') return undefined;
+    let active = true;
+    const promptPayId = String(appSettings.promptPayId || '').replace(/\D/g, '');
+    if (!/^(\d{10}|\d{13}|\d{15})$/.test(promptPayId)) {
+      setPromptPayQr('');
+      setPromptPayQrError('กรุณาตั้งค่า PromptPay ID ให้ถูกต้องก่อนรับชำระ');
+      return () => { active = false; };
+    }
+    setPromptPayQrError('');
+    try {
+      const payload = generatePayload(promptPayId, { amount: Number(net.toFixed(2)) });
+      QRCode.toDataURL(payload, { width: 240, margin: 1 })
+        .then((dataUrl) => { if (active) setPromptPayQr(dataUrl); })
+        .catch(() => { if (active) setPromptPayQrError('สร้าง QR ไม่สำเร็จ'); });
+    } catch {
+      setPromptPayQrError('PromptPay ID ไม่ถูกต้อง');
+    }
+    return () => { active = false; };
+  }, [paymentMethod, appSettings.promptPayId, net]);
+
   function notify(message) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2200);
+  }
+
+  function choosePayment(method) {
+    setCashReceived(method === 'เงินสด' ? net.toFixed(2) : '');
+    setPromptPayQr('');
+    setPromptPayQrError('');
+    setPaymentMethod(method);
   }
 
   function focusBarcodeInput() {
@@ -211,6 +249,14 @@ export default function App() {
       notify('ช่องทางชำระเงินนี้ถูกปิดในตั้งค่า');
       return;
     }
+    if (paymentMethod === 'เงินสด' && receivedAmount < net) {
+      notify('จำนวนเงินที่รับต้องไม่น้อยกว่ายอดสุทธิ');
+      return;
+    }
+    if (paymentMethod === 'พร้อมเพย์' && !promptPayQr) {
+      notify('ยังไม่มี QR พร้อมเพย์สำหรับยอดนี้');
+      return;
+    }
     setSavingSale(true);
     try {
       const response = await fetch('/api/sales', {
@@ -232,8 +278,13 @@ export default function App() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'sale_failed');
-      setReceipt(result.sale);
+      setReceipt({
+        ...result.sale,
+        cashReceived: paymentMethod === 'เงินสด' ? receivedAmount : null,
+        change: paymentMethod === 'เงินสด' ? Math.max(0, receivedAmount - Number(result.sale.total)) : 0
+      });
       setPaymentMethod('');
+      setCashReceived('');
       setCart({ none: [] });
       try {
         const inventoryResponse = await fetch('/api/inventory/lots');
@@ -283,7 +334,7 @@ export default function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={label === 'หน้าร้าน' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="หน้าร้าน" />
     </aside>
 
     <main className="workspace">
@@ -306,11 +357,24 @@ export default function App() {
         <div className="customer-actions"><button className="customer-button" type="button" onClick={() => { setCustomerQuery(''); setCustomerModalOpen(true); }}>เลือกลูกค้า</button><button className="guest-button" type="button" onClick={selectGuestCustomer}>ลูกค้าทั่วไป</button></div>
         <div className="customer"><div className="customer-details"><b>{selectedCustomer ? selectedCustomer.name : 'ลูกค้าทั่วไป'}</b><small>{selectedCustomer ? selectedCustomer.phone : 'ไม่ระบุลูกค้า'}</small></div><div className="customer-avatar">{selectedCustomer?.photoUrl ? <img src={selectedCustomer.photoUrl} alt="" /> : selectedCustomer ? selectedCustomer.name.slice(0, 1) : 'G'}</div></div>
         <div className="cart-list">{Object.entries(cart).filter(([, items]) => items.length > 0).map(([petKey, items]) => <div className="pet-cart" key={petKey}><div className="pet-label"><span className="pet-avatar-placeholder small">{petByKey[petKey]?.photoUrl ? <img src={petByKey[petKey].photoUrl} alt="" /> : petKey === 'none' ? '-' : petByKey[petKey]?.name.slice(0, 1) || '-'}</span><b>{petByKey[petKey]?.name || guestPet.name}</b></div><div className="cart-items">{items.map((item) => <div className="cart-row" key={item.id}><div className="cart-item-details"><b>{item.shortName}</b><small className={`cart-item-type ${item.type === 'บริการ' ? 'service' : 'product'}`}>{item.type === 'บริการ' ? 'บริการ · ไม่ตัดสต็อก' : `สินค้า · ${item.baseUnit}`}</small><select aria-label={`สัตว์เลี้ยงของ ${item.shortName}`} value={petKey} onChange={(event) => moveItemToPet(petKey, item.id, event.target.value)}>{petChoices.map(([key, pet]) => <option value={key} key={key}>{pet.name}</option>)}</select></div><div className="cart-controls"><div className="quantity"><button aria-label={`ลด ${item.shortName}`} onClick={() => updateQuantity(petKey, item.id, -1)}>-</button><span>{item.qty}</span><button aria-label={`เพิ่ม ${item.shortName}`} onClick={() => updateQuantity(petKey, item.id, 1)}>+</button></div><strong className="mono">฿{item.price * item.qty}</strong></div></div>)}</div></div>)}{totals.quantity === 0 && <div className="cart-empty"><span>ยังไม่มีสินค้าในบิล</span><small>สแกนบาร์โค้ดหรือเลือกรายการเพื่อเริ่มขาย</small></div>}</div>
-        <div className="summary"><div className="summary-line"><span>ยอดรวม ({totals.quantity} รายการ)</span><strong className="mono">฿{totals.subtotal}</strong></div>{discount > 0 && <div className="summary-line discount"><span>ส่วนลด</span><strong className="mono">-฿{discount}</strong></div>}{appSettings.vatEnabled && <div className="summary-line"><span>VAT ({appSettings.vatRate}%)</span><strong className="mono">฿{tax.toFixed(2)}</strong></div>}<div className="summary-line net"><b>ยอดชำระสุทธิ:</b><strong className="mono">฿{net.toFixed(2)}</strong></div><div className="payment-buttons">{appSettings.paymentMethods.promptpay && <button disabled={totals.quantity === 0 || Boolean(dataError)} onClick={() => setPaymentMethod('พร้อมเพย์')}>พร้อมเพย์</button>}{appSettings.paymentMethods.cash && <button disabled={totals.quantity === 0 || Boolean(dataError)} onClick={() => setPaymentMethod('เงินสด')}>เงินสด</button>}</div></div>
+        <div className="summary"><div className="summary-line"><span>ยอดรวม ({totals.quantity} รายการ)</span><strong className="mono">฿{totals.subtotal}</strong></div>{discount > 0 && <div className="summary-line discount"><span>ส่วนลด</span><strong className="mono">-฿{discount}</strong></div>}{appSettings.vatEnabled && <div className="summary-line"><span>VAT ({appSettings.vatRate}%)</span><strong className="mono">฿{tax.toFixed(2)}</strong></div>}<div className="summary-line net"><b>ยอดชำระสุทธิ:</b><strong className="mono">฿{net.toFixed(2)}</strong></div><div className="payment-buttons">{appSettings.paymentMethods.promptpay && <button disabled={totals.quantity === 0 || Boolean(dataError) || !/^(\d{10}|\d{13}|\d{15})$/.test(String(appSettings.promptPayId || '').replace(/\D/g, ''))} onClick={() => choosePayment('พร้อมเพย์')}>พร้อมเพย์</button>}{appSettings.paymentMethods.cash && <button disabled={totals.quantity === 0 || Boolean(dataError)} onClick={() => choosePayment('เงินสด')}>เงินสด</button>}</div></div>
       </aside>
     </main>
     {toast && <div className="toast"><b>OK</b>{toast}</div>}
-    {paymentMethod && <div className="modal-backdrop"><div className="modal"><div className="modal-icon">OK</div><h2>ยืนยันการรับชำระเงิน</h2><p>ช่องทาง: <b>{paymentMethod}</b></p><div className="modal-total"><small>ยอดชำระสุทธิ</small><strong className="mono">฿{net}</strong></div><div className="modal-actions"><button disabled={savingSale} onClick={() => setPaymentMethod('')}>ยกเลิก</button><button disabled={savingSale} onClick={confirmPayment}>{savingSale ? 'กำลังบันทึก...' : 'บันทึกการขาย'}</button></div></div></div>}
+    {paymentMethod && <div className="modal-backdrop"><div className={`modal payment-modal ${paymentMethod === 'พร้อมเพย์' ? 'promptpay-modal' : ''}`}>
+      <button type="button" className="modal-close" aria-label="ปิด" onClick={() => { setPaymentMethod(''); setCashReceived(''); }}>×</button>
+      <div className="modal-icon">OK</div><h2>ยืนยันการรับชำระเงิน</h2><p>ช่องทาง: <b>{paymentMethod}</b></p>
+      <div className="modal-total"><small>ยอดชำระสุทธิ</small><strong className="mono">฿{net.toFixed(2)}</strong></div>
+      {paymentMethod === 'เงินสด' && <div className="cash-change-fields">
+        <label>รับเงินมา<input autoFocus type="number" min={net} step="0.01" value={cashReceived || net.toFixed(2)} onChange={(event) => setCashReceived(event.target.value)} /></label>
+        <div><span>เงินทอน</span><strong>฿{changeDue.toLocaleString('th-TH', { minimumFractionDigits: 2 })}</strong></div>
+      </div>}
+      {paymentMethod === 'พร้อมเพย์' && <div className="promptpay-qr-wrap">
+        {promptPayQr ? <img src={promptPayQr} alt={`QR PromptPay ยอด ${net.toFixed(2)} บาท`} /> : <p role="status">{promptPayQrError || 'กำลังสร้าง QR...'}</p>}
+        <small>ตรวจสอบสลิปจากแอปธนาคารก่อนกดยืนยัน</small>
+      </div>}
+      <div className="modal-actions"><button disabled={savingSale} onClick={() => { setPaymentMethod(''); setCashReceived(''); }}>ยกเลิก</button><button disabled={savingSale || (paymentMethod === 'พร้อมเพย์' && !promptPayQr)} onClick={confirmPayment}>{savingSale ? 'กำลังบันทึก...' : 'ยืนยันและบันทึกบิล'}</button></div>
+    </div></div>}
     {receipt && <div className="receipt-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setReceipt(null)}>
       <section className="receipt-preview" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
         <div className="receipt-toolbar">
@@ -342,12 +406,14 @@ export default function App() {
           {Number(receipt.discount) > 0 && <div className="receipt-total-row"><span>ส่วนลด</span><span>-฿{Number(receipt.discount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>}
           {Number(receipt.vatRate) > 0 && <div className="receipt-total-row"><span>VAT {receipt.vatRate}%</span><span>฿{Number(receipt.vatAmount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>}
           <div className="receipt-total-row receipt-grand-total"><strong>ยอดชำระสุทธิ</strong><strong>฿{Number(receipt.total).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</strong></div>
+          {receipt.cashReceived != null && <div className="receipt-total-row"><span>รับเงิน</span><span>฿{Number(receipt.cashReceived).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>}
+          {receipt.cashReceived != null && <div className="receipt-total-row"><span>เงินทอน</span><span>฿{Number(receipt.change).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>}
           <footer className="receipt-footer">{appSettings.receiptFooter}</footer>
         </article>
         <div className="receipt-actions"><button type="button" className="modal-cancel" onClick={() => setReceipt(null)}>ปิด</button><button type="button" className="modal-submit" onClick={() => window.print()}>พิมพ์ใบเสร็จ</button></div>
       </section>
     </div>}
     {customerModalOpen && <div className="customer-picker-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCustomerModalOpen(false)}><section className="customer-picker" role="dialog" aria-modal="true" aria-labelledby="customer-picker-title"><button className="modal-close" type="button" aria-label="ปิด" onClick={() => setCustomerModalOpen(false)}>×</button><h2 id="customer-picker-title">เลือกลูกค้า</h2><p>ค้นหาและเลือกลูกค้าสำหรับรายการขายนี้</p><label className="customer-picker-search"><SearchIcon /><input autoFocus value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="ค้นหาชื่อ เบอร์โทร หรือไอดี..." /></label><div className="customer-picker-list">{filteredCustomers.map((customer) => <button type="button" className={selectedCustomer?.id === customer.id ? 'selected' : ''} key={customer.id} onClick={() => { setSelectedCustomer(customer); setCart((current) => ({ none: Object.values(current).flat() })); const firstPet = pets.find((pet) => pet.ownerCode === customer.id); setActivePet(firstPet ? String(firstPet.petId) : 'none'); setCustomerModalOpen(false); notify(`เลือกลูกค้า ${customer.name} แล้ว`); }}><ProfileAvatar className="picker-avatar" src={customer.photoUrl} name={customer.name} /><span><b>{customer.name}</b><small>{customer.phone} · สัตว์เลี้ยง {customer.petCount} ตัว</small></span><span className="picker-id mono">{customer.id}</span></button>)}{filteredCustomers.length === 0 && <div className="customer-picker-empty">ไม่พบข้อมูลลูกค้า</div>}</div><button className="picker-guest" type="button" onClick={() => { selectGuestCustomer(); setCustomerModalOpen(false); }}>ขายให้ลูกค้าทั่วไป</button></section></div>}
-    {screenLocked && <div className="screen-lock"><form className="screen-lock-card" onSubmit={unlockScreen}><div className="screen-lock-mark">TC</div><h2>หน้าจอถูกล็อก</h2><p>กรอก PIN เพื่อกลับเข้าสู่หน้าร้าน</p><input autoFocus inputMode="numeric" maxLength="6" pattern="[0-9]*" type="password" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '')); setPinError(''); }} placeholder="PIN 4-6 หลัก" /><span className="screen-lock-error">{pinError}</span><button type="submit">ปลดล็อก</button></form></div>}
+    {screenLocked && <div className="screen-lock"><form className="screen-lock-card" onSubmit={unlockScreen}><div className="screen-lock-mark">TC</div><h2>หน้าจอถูกล็อก</h2><p>{currentStaff?.name ? `ผู้ขายปัจจุบัน: ${currentStaff.name}` : 'กรอก PIN เพื่อกลับเข้าสู่หน้าร้าน'}</p><input autoFocus inputMode="numeric" maxLength="6" pattern="[0-9]*" type="password" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '')); setPinError(''); }} placeholder="PIN 4-6 หลัก" /><span className="screen-lock-error">{pinError}</span><button type="submit">ปลดล็อก</button></form></div>}
   </div>;
 }

@@ -1,22 +1,25 @@
 import { NextResponse } from 'next/server';
-import { validateSession } from './src/server/authRepository.js';
-
-const publicPaths = ['/login', '/api/auth', '/api/db/health'];
+import { getSessionIdentity } from './src/server/authRepository.js';
+import { getSessionToken, hasPermission, isPublicPath, permissionForPath } from './src/server/accessControl.js';
 
 export async function proxy(request) {
-  if (process.env.NODE_ENV !== 'production') return NextResponse.next();
-
   const pathname = request.nextUrl.pathname;
-  if (publicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
-  const token = request.cookies.get('tleclinic_session')?.value;
+  const token = getSessionToken(request);
+  if (!token && process.env.NODE_ENV !== 'production') return NextResponse.next();
   if (!token) return unauthorized(request);
 
   try {
-    if (await validateSession(token)) return NextResponse.next();
-    return unauthorized(request);
+    const identity = await getSessionIdentity(token);
+    if (!identity) return unauthorized(request);
+    if (!hasPermission(identity, permissionForPath(pathname, request.method))) {
+      if (pathname.startsWith('/api/')) return Response.json({ error: 'forbidden' }, { status: 403 });
+      return new Response('Forbidden', { status: 403 });
+    }
+    return NextResponse.next();
   } catch {
     if (pathname.startsWith('/api/')) return Response.json({ error: 'database_unavailable' }, { status: 503 });
     return new Response('Database unavailable', { status: 503 });

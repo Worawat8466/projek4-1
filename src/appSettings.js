@@ -13,6 +13,7 @@ export const defaultSettings = {
   taxId: '',
   receiptFooter: 'ขอบคุณที่ไว้วางใจ TleClinic',
   receiptPrefix: 'INV-',
+  promptPayId: '',
   vatRate: 7,
   vatEnabled: false,
   defaultDiscount: 0,

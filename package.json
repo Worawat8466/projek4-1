@@ -13,6 +13,8 @@
   "dependencies": {
     "next": "latest",
     "oracledb": "^26.0.0",
+    "promptpay-qr": "^0.5.0",
+    "qrcode": "^1.5.4",
     "react": "latest",
     "react-dom": "latest",
     "sharp": "^0.35.5"

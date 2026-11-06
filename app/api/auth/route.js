@@ -1,10 +1,12 @@
 import {
   deleteSession,
   getAuthStatus,
+  getSessionIdentity,
   loginStaff,
   recoverStaffAccount,
   setupAdmin
 } from '../../../src/server/authRepository.js';
+import { getSessionToken } from '../../../src/server/accessControl.js';
 
 export const runtime = 'nodejs';
 
@@ -30,8 +32,13 @@ function errorResponse(error) {
   return Response.json({ error: error.code?.toLowerCase() || 'auth_error' }, { status });
 }
 
-export async function GET() {
-  try { return Response.json(await getAuthStatus()); }
+export async function GET(request) {
+  try {
+    const [status, session] = await Promise.all([
+      getAuthStatus(), getSessionIdentity(getSessionToken(request))
+    ]);
+    return Response.json({ ...status, session });
+  }
   catch (error) { return errorResponse(error); }
 }
 

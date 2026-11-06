@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { defaultSettings } from '../../src/appSettings.js';
 import { getLotStatus } from '../../src/inventoryStore.js';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -159,7 +160,7 @@ export default function InventoryPage() {
   return <div className="inventory-page">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={label === 'คลังสินค้า' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="คลังสินค้า" />
     </aside>
 
     <main className="inventory-main">

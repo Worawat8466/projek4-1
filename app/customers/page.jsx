@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import ProfilePhotoField, { ProfileAvatar, uploadProfilePhoto } from '../../src/ProfilePhotoField.jsx';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'],
@@ -165,7 +166,7 @@ export default function CustomersPage() {
     <div className="customer-page">
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-        <nav>{menuItems.map(([label, href]) => <a className={label === 'ลูกค้า' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+        <RoleAwareNavigation items={menuItems} activeLabel="ลูกค้า" />
       </aside>
 
       <main className="customer-main">

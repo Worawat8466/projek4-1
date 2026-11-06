@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import ProfilePhotoField, { ProfileAvatar, uploadProfilePhoto } from '../../src/ProfilePhotoField.jsx';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -11,7 +12,7 @@ const menuItems = [
 
 const roles = ['ผู้ดูแลระบบ', 'สัตวแพทย์', 'ผู้ช่วย', 'พนักงานหน้าร้าน'];
 const roleCodes = { 'ผู้ดูแลระบบ': 'ADMIN', 'สัตวแพทย์': 'VET', 'ผู้ช่วย': 'ASSISTANT', 'พนักงานหน้าร้าน': 'CASHIER' };
-const emptyForm = { firstName: '', lastName: '', role: '', email: '', phone: '' };
+const emptyForm = { firstName: '', lastName: '', role: '', email: '', phone: '', password: '', pin: '' };
 
 function SearchIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>;
@@ -66,7 +67,7 @@ export default function EmployeesPage() {
 
   function openEditModal(employee) {
     const [firstName = '', ...lastNameParts] = employee.name.split(' ');
-    setForm({ firstName, lastName: lastNameParts.join(' '), role: employee.role, email: employee.email, phone: employee.phone });
+    setForm({ ...emptyForm, firstName, lastName: lastNameParts.join(' '), role: employee.role, email: employee.email, phone: employee.phone });
     setPhotoFile(null);
     setModal({ type: 'edit', employee });
   }
@@ -78,7 +79,9 @@ export default function EmployeesPage() {
       lastName: form.lastName.trim(),
       roleCode: roleCodes[form.role] || form.role,
       email: form.email.trim(),
-      phone: form.phone.trim()
+      phone: form.phone.trim(),
+      password: form.password,
+      pin: form.pin
     };
 
     try {
@@ -124,7 +127,7 @@ export default function EmployeesPage() {
   return <div className="employees-page">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={label === 'จัดการพนักงาน' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="จัดการพนักงาน" />
     </aside>
 
     <main className="employees-main">
@@ -167,6 +170,8 @@ export default function EmployeesPage() {
         <label className="employee-field">นามสกุล<input required value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>
         <label className="employee-field">อีเมล<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
         <label className="employee-field">เบอร์โทรศัพท์<input required type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label className="employee-field">รหัสผ่าน{modal.type === 'edit' && <small>เว้นว่างหากไม่ต้องการเปลี่ยน</small>}<input required={modal.type === 'add'} minLength="8" type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+        <label className="employee-field">PIN 4–6 หลัก{modal.type === 'edit' && <small>เว้นว่างหากไม่ต้องการเปลี่ยน</small>}<input required={modal.type === 'add'} inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" type="password" autoComplete="new-password" value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value.replace(/\D/g, '') })} /></label>
         <label className="employee-field employee-field-wide">บทบาทหน้าที่<select required value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="" disabled>เลือกบทบาท</option>{roles.map((role) => <option key={role}>{role}</option>)}</select></label>
         <div className="employee-modal-actions">
           <button type="button" className="employee-cancel-button" onClick={() => setModal(null)}>ยกเลิก</button>

@@ -824,6 +824,15 @@ body {
   color: #16a34a;
   font-weight: 700;
 }
+.cash-change-fields { display: grid; gap: 10px; margin: 16px 0; text-align: left; }
+.cash-change-fields label { display: grid; gap: 5px; color: #64748b; font-size: 12px; }
+.cash-change-fields input { min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: 16px "JetBrains Mono", monospace; }
+.cash-change-fields > div { display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+.cash-change-fields strong { color: #16803c; font: 700 18px "JetBrains Mono", monospace; }
+.promptpay-modal { width: min(100%, 400px); }
+.promptpay-qr-wrap { display: grid; justify-items: center; gap: 8px; margin: 8px 0 16px; }
+.promptpay-qr-wrap img { width: 240px; height: 240px; image-rendering: pixelated; }
+.promptpay-qr-wrap p, .promptpay-qr-wrap small { margin: 0; color: #64748b; font-size: 11px; }
 .modal h2 {
   margin: 0;
   font-size: 18px;

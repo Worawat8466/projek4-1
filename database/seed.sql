@@ -6,19 +6,19 @@ WHEN NOT MATCHED THEN INSERT (role_code, role_name, permissions_json, is_system)
 VALUES (source.role_code, source.role_name, source.permissions_json, source.is_system);
 
 MERGE INTO staff_roles target
-USING (SELECT 'VET' role_code, 'สัตวแพทย์' role_name, '{"sales":true,"customers":true,"pets":true}' permissions_json, 'Y' is_system FROM dual) source
+USING (SELECT 'VET' role_code, 'สัตวแพทย์' role_name, '{"sales":true,"customers":true,"pets":true,"inventory":true,"dashboard":true,"reports":true}' permissions_json, 'Y' is_system FROM dual) source
 ON (target.role_code = source.role_code)
 WHEN NOT MATCHED THEN INSERT (role_code, role_name, permissions_json, is_system)
 VALUES (source.role_code, source.role_name, source.permissions_json, source.is_system);
 
 MERGE INTO staff_roles target
-USING (SELECT 'ASSISTANT' role_code, 'ผู้ช่วย' role_name, '{"sales":true,"customers":true,"pets":true}' permissions_json, 'Y' is_system FROM dual) source
+USING (SELECT 'ASSISTANT' role_code, 'ผู้ช่วย' role_name, '{"sales":true,"customers":true,"pets":true,"inventory":true}' permissions_json, 'Y' is_system FROM dual) source
 ON (target.role_code = source.role_code)
 WHEN NOT MATCHED THEN INSERT (role_code, role_name, permissions_json, is_system)
 VALUES (source.role_code, source.role_name, source.permissions_json, source.is_system);
 
 MERGE INTO staff_roles target
-USING (SELECT 'CASHIER' role_code, 'พนักงานหน้าร้าน' role_name, '{"sales":true,"customers":true}' permissions_json, 'Y' is_system FROM dual) source
+USING (SELECT 'CASHIER' role_code, 'พนักงานหน้าร้าน' role_name, '{"sales":true,"customers":true,"pets":true}' permissions_json, 'Y' is_system FROM dual) source
 ON (target.role_code = source.role_code)
 WHEN NOT MATCHED THEN INSERT (role_code, role_name, permissions_json, is_system)
 VALUES (source.role_code, source.role_name, source.permissions_json, source.is_system);

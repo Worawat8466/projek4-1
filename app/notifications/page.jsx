@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -85,7 +86,7 @@ export default function NotificationsPage() {
   return <div className="notifications-page">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={href === '/notifications' ? 'active' : ''} href={href} key={href}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="การแจ้งเตือน" />
     </aside>
     <main className="notifications-main">
       <header className="notifications-header">

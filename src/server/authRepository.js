@@ -192,3 +192,33 @@ export async function deleteSession(token) {
     await connection.execute('DELETE FROM auth_sessions WHERE token_hash = :tokenHash', { tokenHash: hashToken(token) });
   });
 }
+
+export function hashStaffSecret(secret) {
+  return hashSecret(secret);
+}
+
+export async function getSessionIdentity(token) {
+  if (!token) return null;
+  return withOracleConnection(async (connection) => {
+    const result = await connection.execute(
+      `SELECT s.staff_id, s.first_name, s.last_name, s.email, r.role_code,
+              DBMS_LOB.SUBSTR(r.permissions_json, 4000, 1) AS permissions_json
+         FROM auth_sessions a
+         JOIN staff s ON s.staff_id = a.staff_id
+         JOIN staff_roles r ON r.role_id = s.role_id
+        WHERE a.token_hash = :tokenHash AND a.expires_at > SYSTIMESTAMP AND s.is_active = 'Y'`,
+      { tokenHash: hashToken(token) }, objectRows
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    let permissions = {};
+    try { permissions = JSON.parse(row.PERMISSIONS_JSON || '{}'); } catch { permissions = {}; }
+    return {
+      staffId: Number(row.STAFF_ID),
+      name: [row.FIRST_NAME, row.LAST_NAME].filter(Boolean).join(' '),
+      email: row.EMAIL,
+      roleCode: row.ROLE_CODE,
+      permissions
+    };
+  });
+}

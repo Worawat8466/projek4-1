@@ -1,5 +1,6 @@
 import oracledb from 'oracledb';
 import { withOracleConnection, withOracleTransaction } from './oraclePool.js';
+import { hashStaffSecret } from './authRepository.js';
 
 function customerFromRow(row) {
   return {
@@ -319,6 +320,8 @@ export async function listStaff() {
 
 export async function createStaff(input) {
   return withOracleTransaction(async (connection) => {
+    const passwordHash = await hashStaffSecret(input.password);
+    const pinHash = await hashStaffSecret(input.pin);
     const roleCodes = { 'ผู้ดูแลระบบ': 'ADMIN', 'สัตวแพทย์': 'VET', 'ผู้ช่วย': 'ASSISTANT', 'พนักงานหน้าร้าน': 'CASHIER' };
     const roleResult = await connection.execute(
       `SELECT role_id FROM staff_roles WHERE role_code = :roleCode AND is_system = 'Y'`,
@@ -327,14 +330,16 @@ export async function createStaff(input) {
     );
     if (!roleResult.rows[0]) throw Object.assign(new Error('role_not_found'), { code: 'ROLE_NOT_FOUND' });
     await connection.execute(
-      `INSERT INTO staff (role_id, first_name, last_name, email, phone)
-       VALUES (:roleId, :firstName, :lastName, :email, :phone)`,
+      `INSERT INTO staff (role_id, first_name, last_name, email, phone, password_hash, pin_hash)
+       VALUES (:roleId, :firstName, :lastName, :email, :phone, :passwordHash, :pinHash)`,
       {
         roleId: roleResult.rows[0].ROLE_ID,
         firstName: input.firstName?.trim() || '',
         lastName: input.lastName?.trim() || '',
         email: input.email?.trim() || '',
-        phone: input.phone?.trim() || null
+        phone: input.phone?.trim() || null,
+        passwordHash,
+        pinHash
       }
     );
     const rows = await connection.execute(
@@ -350,6 +355,8 @@ export async function createStaff(input) {
 
 export async function updateStaff(staffId, input) {
   return withOracleTransaction(async (connection) => {
+    const passwordHash = input.password ? await hashStaffSecret(input.password) : null;
+    const pinHash = input.pin ? await hashStaffSecret(input.pin) : null;
     const roleCodes = { 'ผู้ดูแลระบบ': 'ADMIN', 'สัตวแพทย์': 'VET', 'ผู้ช่วย': 'ASSISTANT', 'พนักงานหน้าร้าน': 'CASHIER' };
     const roleResult = await connection.execute(
       `SELECT role_id FROM staff_roles WHERE role_code = :roleCode AND is_system = 'Y'`,
@@ -357,15 +364,19 @@ export async function updateStaff(staffId, input) {
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
     if (!roleResult.rows[0]) throw Object.assign(new Error('role_not_found'), { code: 'ROLE_NOT_FOUND' });
+    const credentialColumns = passwordHash ? ', password_hash = :passwordHash' : '';
+    const pinColumn = pinHash ? ', pin_hash = :pinHash' : '';
     const result = await connection.execute(
       `UPDATE staff SET role_id = :roleId, first_name = :firstName, last_name = :lastName,
-              email = :email, phone = :phone, is_active = :isActive, updated_at = SYSTIMESTAMP
+              email = :email, phone = :phone, is_active = :isActive${credentialColumns}${pinColumn}, updated_at = SYSTIMESTAMP
         WHERE staff_id = :staffId`,
       {
         staffId: Number(staffId), roleId: roleResult.rows[0].ROLE_ID,
         firstName: input.firstName?.trim() || '', lastName: input.lastName?.trim() || '',
         email: input.email?.trim() || '', phone: input.phone?.trim() || null,
-        isActive: input.active === false ? 'N' : 'Y'
+        isActive: input.active === false ? 'N' : 'Y',
+        ...(passwordHash ? { passwordHash } : {}),
+        ...(pinHash ? { pinHash } : {})
       }
     );
     if (!result.rowsAffected) return null;

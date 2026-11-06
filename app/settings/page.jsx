@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { defaultSettings, themes } from '../../src/appSettings.js';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -106,7 +107,7 @@ export default function SettingsPage() {
   return <div className="settings-page" style={{ '--theme-accent': themes.find((theme) => theme.id === settings.themeId)?.color || themes[0].color }}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={label === 'ตั้งค่า' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="ตั้งค่า" />
     </aside>
 
     <main className="settings-main">
@@ -142,6 +143,7 @@ export default function SettingsPage() {
             <label>อัตราภาษี VAT (%)<input type="number" min="0" max="100" step="0.01" value={settings.vatRate} onChange={(event) => updateSetting('vatRate', Math.min(100, Math.max(0, Number(event.target.value))))} /></label>
             <label>ส่วนลดเริ่มต้น (บาท)<input type="number" min="0" step="1" value={settings.defaultDiscount} onChange={(event) => updateSetting('defaultDiscount', Math.max(0, Number(event.target.value)))} /></label>
             <label>รูปแบบการพิมพ์<select value={settings.printFormat} onChange={(event) => updateSetting('printFormat', event.target.value)}><option>ใบเสร็จขนาดเล็ก</option><option>A4</option></select></label>
+            <label className="wide">PromptPay ID<input inputMode="numeric" maxLength="15" value={settings.promptPayId || ''} onChange={(event) => updateSetting('promptPayId', event.target.value.replace(/\D/g, ''))} placeholder="เบอร์มือถือ 10 หลัก หรือเลขอ้างอิง 13/15 หลัก" /><small>ใช้สร้าง QR ตามยอดสุทธิ ระบบไม่ตรวจสอบสลิปกับธนาคาร</small></label>
           </div>
           <div className="settings-toggles">
             <label><span><b>คิดภาษี VAT</b><small>คำนวณ VAT เพิ่มจากยอดหลังหักส่วนลด</small></span><input type="checkbox" checked={settings.vatEnabled} onChange={(event) => updateSetting('vatEnabled', event.target.checked)} /></label>

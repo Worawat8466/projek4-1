@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import ProfilePhotoField, { ProfileAvatar, uploadProfilePhoto } from '../../src/ProfilePhotoField.jsx';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -180,7 +181,7 @@ export default function PetsPage() {
   return <div className="pets-page">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div>
-      <nav>{menuItems.map(([label, href]) => <a className={label === 'สัตว์เลี้ยง' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav>
+      <RoleAwareNavigation items={menuItems} activeLabel="สัตว์เลี้ยง" />
     </aside>
     <main className="pets-main">
       <header className="pets-header"><h1>สัตว์เลี้ยง</h1><button className="add-customer-button" onClick={openAddModal}><span>+</span> เพิ่มสัตว์เลี้ยง</button></header>

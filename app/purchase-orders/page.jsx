@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -144,7 +145,7 @@ export default function PurchaseOrdersPage() {
   }
 
   return <div className="purchase-page">
-    <aside className="sidebar"><div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div><nav>{menuItems.map(([label, href]) => <a className={label === 'สั่งซื้อสินค้า' ? 'active' : ''} href={href} key={label}>{label}</a>)}</nav></aside>
+    <aside className="sidebar"><div className="brand"><div className="brand-mark">TC</div><strong>Tle<span>Clinic</span></strong></div><RoleAwareNavigation items={menuItems} activeLabel="สั่งซื้อสินค้า" /></aside>
     <main className="purchase-main">
       <header className="purchase-header"><div><p>จัดซื้อและตรวจรับ</p><h1>สั่งซื้อสินค้า</h1></div><button className="add-customer-button" type="button" onClick={openCreateOrder} disabled={!products.length || !suppliers.length}><span>+</span> สร้างใบสั่งซื้อ</button></header>
       <label className="customer-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาเลขที่ใบสั่งซื้อ หรือผู้จัดจำหน่าย..." /></label>

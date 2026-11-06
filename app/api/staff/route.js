@@ -11,7 +11,8 @@ export async function GET() {
 export async function POST(request) {
   try {
     const input = await request.json();
-    if (!input.firstName?.trim() || !input.lastName?.trim() || !input.email?.trim() || !(input.roleCode || input.role)) {
+    if (!input.firstName?.trim() || !input.lastName?.trim() || !input.email?.trim() || !(input.roleCode || input.role) ||
+      (input.password || '').length < 8 || !/^\d{4,6}$/.test(input.pin || '')) {
       return Response.json({ error: 'invalid_staff' }, { status: 400 });
     }
     return Response.json({ staff: await createStaff(input) }, { status: 201 });
