@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PasswordInput from '../../src/PasswordInput.jsx';
 function Field({ label, type = 'text', value, onChange, placeholder, autoFocus = false, inputMode }) {
-  return <label className="auth-field">{label}<input autoFocus={autoFocus} inputMode={inputMode} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
+  const inputProps = { autoFocus, inputMode, value, onChange: (event) => onChange(event.target.value), placeholder };
+  return <label className="auth-field">{label}{type === 'password' ? <PasswordInput {...inputProps} /> : <input {...inputProps} type={type} />}</label>;
 }
 
 export default function LoginPage() {

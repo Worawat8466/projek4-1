@@ -2588,6 +2588,13 @@ body {
 .security-modal form { display: grid; gap: 12px; }
 .security-modal form label { display: grid; gap: 5px; font-size: 12px; }
 .security-modal form input { min-height: 38px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.password-visibility-field { position: relative; display: block; width: 100%; }
+.auth-field .password-visibility-field { margin-top: 7px; }
+.auth-field .password-visibility-field input { margin-top: 0; }
+.password-visibility-field > input { padding-right: 44px !important; }
+.password-visibility-toggle { position: absolute; top: 50%; right: 6px; display: grid; width: 32px; height: 32px; transform: translateY(-50%); place-items: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: #64748b; cursor: pointer; }
+.password-visibility-toggle:hover { background: #e9eff3; color: #243b53; }
+.password-visibility-toggle svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .security-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .recovery-code-value { display: block; margin: 18px 0; padding: 14px; border: 1px dashed #94a3b8; border-radius: 6px; background: #f8fafc; font: 600 16px "JetBrains Mono", monospace; text-align: center; user-select: all; }
 .settings-import-input { display: none; }

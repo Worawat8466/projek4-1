@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { defaultSettings, themes } from '../../src/appSettings.js';
 import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
+import PasswordInput from '../../src/PasswordInput.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -251,9 +252,9 @@ export default function SettingsPage() {
         </> : <form onSubmit={submitSecurityChange}>
           <h2 id="security-modal-title">{securityModal === 'password' ? 'เปลี่ยนรหัสผ่านบัญชีผู้ดูแล' : securityModal === 'pin' ? 'เปลี่ยน PIN ผู้ดูแล' : securityModal === 'setup-reset' ? 'กลับไปหน้า Setup ครั้งแรก' : 'ออก Recovery Code ใหม่'}</h2>
           {securityModal === 'setup-reset' && <p>ระบบจะปิดบัญชีผู้ดูแลและออกจากทุก session เพื่อให้ตั้ง Admin ใหม่ ข้อมูลลูกค้า สัตว์เลี้ยง สินค้า สต็อก และยอดขายจะไม่ถูกลบ</p>}
-          <label>รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={securityForm.currentPassword} onChange={(event) => setSecurityForm({ ...securityForm, currentPassword: event.target.value })} /></label>
-          {securityModal === 'password' && <label>รหัสผ่านใหม่<input required minLength="8" type="password" autoComplete="new-password" value={securityForm.password} onChange={(event) => setSecurityForm({ ...securityForm, password: event.target.value })} /></label>}
-          {securityModal === 'pin' && <label>PIN ใหม่ (4–6 หลัก)<input required inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" type="password" autoComplete="new-password" value={securityForm.pin} onChange={(event) => setSecurityForm({ ...securityForm, pin: event.target.value.replace(/\D/g, '') })} /></label>}
+          <label>รหัสผ่านปัจจุบัน<PasswordInput required autoComplete="current-password" value={securityForm.currentPassword} onChange={(event) => setSecurityForm({ ...securityForm, currentPassword: event.target.value })} /></label>
+          {securityModal === 'password' && <label>รหัสผ่านใหม่<PasswordInput required minLength="8" autoComplete="new-password" value={securityForm.password} onChange={(event) => setSecurityForm({ ...securityForm, password: event.target.value })} /></label>}
+          {securityModal === 'pin' && <label>PIN ใหม่ (4–6 หลัก)<PasswordInput inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" autoComplete="new-password" value={securityForm.pin} onChange={(event) => setSecurityForm({ ...securityForm, pin: event.target.value.replace(/\D/g, '') })} /></label>}
           <div className="security-modal-actions"><button type="button" className="modal-cancel" onClick={() => setSecurityModal(null)}>ยกเลิก</button><button type="submit" className="modal-submit">ยืนยัน</button></div>
         </form>}
       </section>

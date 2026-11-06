@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ProfilePhotoField, { ProfileAvatar, uploadProfilePhoto } from '../../src/ProfilePhotoField.jsx';
 import RoleAwareNavigation from '../../src/RoleAwareNavigation.jsx';
+import PasswordInput from '../../src/PasswordInput.jsx';
 
 const menuItems = [
   ['Dashboard', '/dashboard'], ['หน้าร้าน', '/'], ['ลูกค้า', '/customers'], ['สัตว์เลี้ยง', '/pets'],
@@ -170,8 +171,8 @@ export default function EmployeesPage() {
         <label className="employee-field">นามสกุล<input required value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} /></label>
         <label className="employee-field">อีเมล<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
         <label className="employee-field">เบอร์โทรศัพท์<input required type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
-        <label className="employee-field">รหัสผ่าน{modal.type === 'edit' && <small>เว้นว่างหากไม่ต้องการเปลี่ยน</small>}<input required={modal.type === 'add'} minLength="8" type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
-        <label className="employee-field">PIN 4–6 หลัก{modal.type === 'edit' && <small>เว้นว่างหากไม่ต้องการเปลี่ยน</small>}<input required={modal.type === 'add'} inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" type="password" autoComplete="new-password" value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value.replace(/\D/g, '') })} /></label>
+        <label className="employee-field">รหัสผ่าน{modal.type === 'edit' && <small>เว้นว่างหากไม่ต้องการเปลี่ยน</small>}<PasswordInput required={modal.type === 'add'} minLength="8" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+        <label className="employee-field">PIN 4–6 หลัก{modal.type === 'edit' && <small>เว้นว่างหากไม่ต้องการเปลี่ยน</small>}<PasswordInput required={modal.type === 'add'} inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" autoComplete="new-password" value={form.pin} onChange={(event) => setForm({ ...form, pin: event.target.value.replace(/\D/g, '') })} /></label>
         <label className="employee-field employee-field-wide">บทบาทหน้าที่<select required value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="" disabled>เลือกบทบาท</option>{roles.map((role) => <option key={role}>{role}</option>)}</select></label>
         <div className="employee-modal-actions">
           <button type="button" className="employee-cancel-button" onClick={() => setModal(null)}>ยกเลิก</button>
