@@ -1,9 +1,11 @@
 import {
+  changeAdminCredentials,
   deleteSession,
   getAuthStatus,
   getSessionIdentity,
   loginStaff,
   recoverStaffAccount,
+  rotateAdminRecoveryCode,
   setupAdmin
 } from '../../../src/server/authRepository.js';
 import { getSessionToken } from '../../../src/server/accessControl.js';
@@ -45,6 +47,15 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const input = await request.json();
+    if (input.action === 'change-admin-credentials' || input.action === 'rotate-recovery-code') {
+      const token = getSessionToken(request);
+      const identity = await getSessionIdentity(token);
+      if (!identity || identity.roleCode !== 'ADMIN') return Response.json({ error: 'forbidden' }, { status: 403 });
+      if (input.action === 'change-admin-credentials') {
+        return Response.json(await changeAdminCredentials(token, input));
+      }
+      return Response.json(await rotateAdminRecoveryCode(token, input));
+    }
     if (input.action === 'setup') {
       if (!/^\S+@\S+\.\S+$/.test(input.email || '') || (input.password || '').length < 8 || !/^\d{4,6}$/.test(input.pin || '')) {
         return Response.json({ error: 'invalid_setup' }, { status: 400 });

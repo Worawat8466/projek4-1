@@ -1,5 +1,7 @@
 import { createStaff, listStaff } from '../../../src/server/clinicRepository.js';
 import { databaseErrorResponse } from '../../../src/server/apiErrors.js';
+import { getSessionIdentity } from '../../../src/server/authRepository.js';
+import { getSessionToken } from '../../../src/server/accessControl.js';
 
 export const runtime = 'nodejs';
 
@@ -15,6 +17,7 @@ export async function POST(request) {
       (input.password || '').length < 8 || !/^\d{4,6}$/.test(input.pin || '')) {
       return Response.json({ error: 'invalid_staff' }, { status: 400 });
     }
-    return Response.json({ staff: await createStaff(input) }, { status: 201 });
+    const identity = await getSessionIdentity(getSessionToken(request));
+    return Response.json({ staff: await createStaff({ ...input, actorId: identity?.staffId || null }) }, { status: 201 });
   } catch (error) { return databaseErrorResponse(error); }
 }

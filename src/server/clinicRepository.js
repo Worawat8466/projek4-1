@@ -1,6 +1,6 @@
 import oracledb from 'oracledb';
 import { withOracleConnection, withOracleTransaction } from './oraclePool.js';
-import { hashStaffSecret } from './authRepository.js';
+import { hashStaffSecret, writeAuditLog } from './authRepository.js';
 
 function customerFromRow(row) {
   return {
@@ -349,6 +349,9 @@ export async function createStaff(input) {
       { email: input.email?.trim() || '' },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
+    await writeAuditLog(connection, input.actorId || null, 'STAFF_CREATED', 'STAFF', rows.rows[0].STAFF_ID, {
+      email: input.email?.trim() || '', roleCode: input.roleCode || input.role
+    });
     return staffFromRow(rows.rows[0]);
   });
 }
@@ -387,16 +390,21 @@ export async function updateStaff(staffId, input) {
       { staffId: Number(staffId) },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
+    await writeAuditLog(connection, input.actorId || null, 'STAFF_UPDATED', 'STAFF', Number(staffId), {
+      email: input.email?.trim() || '', roleCode: input.roleCode || input.role,
+      passwordReset: Boolean(passwordHash), pinReset: Boolean(pinHash)
+    });
     return staffFromRow(rows.rows[0]);
   });
 }
 
-export async function deactivateStaff(staffId) {
+export async function deactivateStaff(staffId, actorId = null) {
   return withOracleTransaction(async (connection) => {
     const result = await connection.execute(
       `UPDATE staff SET is_active = 'N', updated_at = SYSTIMESTAMP WHERE staff_id = :staffId AND is_active = 'Y'`,
       { staffId: Number(staffId) }
     );
+    if (result.rowsAffected) await writeAuditLog(connection, actorId, 'STAFF_DEACTIVATED', 'STAFF', Number(staffId));
     return result.rowsAffected > 0;
   });
 }

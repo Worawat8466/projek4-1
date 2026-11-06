@@ -26,6 +26,14 @@ function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+export async function writeAuditLog(connection, staffId, action, entityName = null, entityId = null, details = null) {
+  await connection.execute(
+    `INSERT INTO audit_logs (staff_id, action, entity_name, entity_id, details)
+     VALUES (:staffId, :action, :entityName, :entityId, :details)`,
+    { staffId, action, entityName, entityId, details: details == null ? null : JSON.stringify(details) }
+  );
+}
+
 function makeRecoveryCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = randomBytes(12);
@@ -97,6 +105,7 @@ export async function setupAdmin(input) {
     const staffResult = await connection.execute(
       'SELECT staff_id FROM staff WHERE email = :email', { email }, objectRows
     );
+    await writeAuditLog(connection, staffResult.rows[0].STAFF_ID, 'ADMIN_SETUP', 'STAFF', staffResult.rows[0].STAFF_ID);
     const token = await createSession(connection, staffResult.rows[0].STAFF_ID);
     return { token, recoveryCode };
   });
@@ -118,6 +127,7 @@ export async function loginStaff(input) {
       'UPDATE staff SET last_login_at = SYSTIMESTAMP WHERE staff_id = :staffId',
       { staffId: staff.STAFF_ID }
     );
+    await writeAuditLog(connection, staff.STAFF_ID, 'LOGIN', 'STAFF', staff.STAFF_ID);
     const token = await createSession(connection, staff.STAFF_ID);
     return { token };
   });
@@ -144,7 +154,66 @@ export async function recoverStaffAccount(input) {
         WHERE staff_id = :staffId`,
       { passwordHash, pinHash, staffId: staff.STAFF_ID }
     );
+    await writeAuditLog(connection, staff.STAFF_ID, 'ACCOUNT_RECOVERED', 'STAFF', staff.STAFF_ID);
     await connection.execute('DELETE FROM auth_sessions WHERE staff_id = :staffId', { staffId: staff.STAFF_ID });
+  });
+}
+
+export async function changeAdminCredentials(token, input) {
+  if ((input.password && input.password.length < 8) || (input.pin && !/^\d{4,6}$/.test(input.pin)) || (!input.password && !input.pin)) {
+    throw Object.assign(new Error('invalid_credentials'), { code: 'INVALID_CREDENTIALS' });
+  }
+  return withOracleTransaction(async (connection) => {
+    const result = await connection.execute(
+      `SELECT s.staff_id, s.password_hash, r.role_code FROM auth_sessions a
+         JOIN staff s ON s.staff_id = a.staff_id
+         JOIN staff_roles r ON r.role_id = s.role_id
+        WHERE a.token_hash = :tokenHash AND a.expires_at > SYSTIMESTAMP AND s.is_active = 'Y'
+        FOR UPDATE OF s.password_hash`,
+      { tokenHash: hashToken(token) }, objectRows
+    );
+    const staff = result.rows[0];
+    if (!staff || staff.ROLE_CODE !== 'ADMIN' || !(await verifySecret(input.currentPassword || '', staff.PASSWORD_HASH))) {
+      throw Object.assign(new Error('invalid_credentials'), { code: 'INVALID_CREDENTIALS' });
+    }
+    const passwordHash = input.password ? await hashSecret(input.password) : null;
+    const pinHash = input.pin ? await hashSecret(input.pin) : null;
+    const assignments = [];
+    const binds = { staffId: staff.STAFF_ID };
+    if (passwordHash) { assignments.push('password_hash = :passwordHash'); binds.passwordHash = passwordHash; }
+    if (pinHash) { assignments.push('pin_hash = :pinHash'); binds.pinHash = pinHash; }
+    await connection.execute(
+      `UPDATE staff SET ${assignments.join(', ')}, updated_at = SYSTIMESTAMP WHERE staff_id = :staffId`,
+      binds
+    );
+    await writeAuditLog(connection, staff.STAFF_ID, 'ADMIN_CREDENTIALS_CHANGED', 'STAFF', staff.STAFF_ID, {
+      passwordChanged: Boolean(passwordHash), pinChanged: Boolean(pinHash)
+    });
+    return { passwordChanged: Boolean(passwordHash), pinChanged: Boolean(pinHash) };
+  });
+}
+
+export async function rotateAdminRecoveryCode(token, input) {
+  return withOracleTransaction(async (connection) => {
+    const result = await connection.execute(
+      `SELECT s.staff_id, s.password_hash, r.role_code FROM auth_sessions a
+         JOIN staff s ON s.staff_id = a.staff_id
+         JOIN staff_roles r ON r.role_id = s.role_id
+        WHERE a.token_hash = :tokenHash AND a.expires_at > SYSTIMESTAMP AND s.is_active = 'Y'
+        FOR UPDATE OF s.recovery_code_hash`,
+      { tokenHash: hashToken(token) }, objectRows
+    );
+    const staff = result.rows[0];
+    if (!staff || staff.ROLE_CODE !== 'ADMIN' || !(await verifySecret(input.currentPassword || '', staff.PASSWORD_HASH))) {
+      throw Object.assign(new Error('invalid_credentials'), { code: 'INVALID_CREDENTIALS' });
+    }
+    const recoveryCode = makeRecoveryCode();
+    await connection.execute(
+      'UPDATE staff SET recovery_code_hash = :recoveryCodeHash, updated_at = SYSTIMESTAMP WHERE staff_id = :staffId',
+      { recoveryCodeHash: await hashSecret(recoveryCode), staffId: staff.STAFF_ID }
+    );
+    await writeAuditLog(connection, staff.STAFF_ID, 'RECOVERY_CODE_ROTATED', 'STAFF', staff.STAFF_ID);
+    return { recoveryCode };
   });
 }
 
@@ -189,6 +258,11 @@ export async function verifyStaffPin(token, pin) {
 export async function deleteSession(token) {
   if (!token) return;
   return withOracleTransaction(async (connection) => {
+    const result = await connection.execute(
+      `SELECT staff_id FROM auth_sessions WHERE token_hash = :tokenHash`,
+      { tokenHash: hashToken(token) }, objectRows
+    );
+    if (result.rows[0]) await writeAuditLog(connection, result.rows[0].STAFF_ID, 'LOGOUT', 'STAFF', result.rows[0].STAFF_ID);
     await connection.execute('DELETE FROM auth_sessions WHERE token_hash = :tokenHash', { tokenHash: hashToken(token) });
   });
 }

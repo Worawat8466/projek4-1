@@ -13,6 +13,7 @@ export function isPublicPath(pathname) {
 export function permissionForPath(pathname, method = 'GET') {
   const isRead = method === 'GET' || method === 'HEAD';
   if (pathname.startsWith('/api/notifications')) return null;
+  if (pathname === '/api/audit-logs') return 'staff';
   if (pathname === '/api/auth/pin') return 'sales';
   if (pathname === '/' || pathname === '/dashboard') return pathname === '/' ? 'sales' : 'dashboard';
   if (pathname === '/sales-reports') return 'reports';

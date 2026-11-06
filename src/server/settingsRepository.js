@@ -1,6 +1,7 @@
 import oracledb from 'oracledb';
 import { withOracleConnection, withOracleTransaction } from './oraclePool.js';
 import { defaultSettings } from '../appSettings.js';
+import { writeAuditLog } from './authRepository.js';
 
 export async function getClinicSettings() {
   return withOracleConnection(async (connection) => {
@@ -20,21 +21,22 @@ export async function getClinicSettings() {
   });
 }
 
-export async function saveClinicSettings(settings) {
+export async function saveClinicSettings(settings, updatedBy = null) {
   const settingsJson = JSON.stringify(settings);
   if (settingsJson.length > 3900) throw Object.assign(new Error('settings_too_large'), { code: 'INVALID_SETTINGS' });
   return withOracleTransaction(async (connection) => {
     const update = await connection.execute(
-      `UPDATE clinic_settings SET settings_json = :settingsJson, updated_at = SYSTIMESTAMP
+      `UPDATE clinic_settings SET settings_json = :settingsJson, updated_by = :updatedBy, updated_at = SYSTIMESTAMP
         WHERE settings_id = 1`,
-      { settingsJson }
+      { settingsJson, updatedBy }
     );
     if (!update.rowsAffected) {
       await connection.execute(
-        'INSERT INTO clinic_settings (settings_id, settings_json) VALUES (1, :settingsJson)',
-        { settingsJson }
+        'INSERT INTO clinic_settings (settings_id, settings_json, updated_by) VALUES (1, :settingsJson, :updatedBy)',
+        { settingsJson, updatedBy }
       );
     }
+    await writeAuditLog(connection, updatedBy, 'CLINIC_SETTINGS_UPDATED', 'CLINIC_SETTINGS', 1);
     return settings;
   });
 }

@@ -16,6 +16,10 @@ export default function SettingsPage() {
   const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [securityModal, setSecurityModal] = useState(null);
+  const [securityForm, setSecurityForm] = useState({ currentPassword: '', password: '', pin: '' });
+  const [newRecoveryCode, setNewRecoveryCode] = useState('');
+  const [auditLogs, setAuditLogs] = useState([]);
   const importInput = useRef(null);
 
   useEffect(() => {
@@ -33,6 +37,15 @@ export default function SettingsPage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/audit-logs')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (active && data) setAuditLogs(data.logs); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   function notify(message) {
     setToast(message);
     window.setTimeout(() => setToast(''), 2600);
@@ -46,6 +59,38 @@ export default function SettingsPage() {
   function updatePaymentMethod(key, value) {
     setSettings((current) => ({ ...current, paymentMethods: { ...current.paymentMethods, [key]: value } }));
     setDirty(true);
+  }
+
+  function openSecurityModal(type) {
+    setSecurityForm({ currentPassword: '', password: '', pin: '' });
+    setNewRecoveryCode('');
+    setSecurityModal(type);
+  }
+
+  async function submitSecurityChange(event) {
+    event.preventDefault();
+    const action = securityModal === 'recovery' ? 'rotate-recovery-code' : 'change-admin-credentials';
+    const payload = { action, currentPassword: securityForm.currentPassword };
+    if (securityModal === 'password') payload.password = securityForm.password;
+    if (securityModal === 'pin') payload.pin = securityForm.pin;
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'security_change_failed');
+      if (result.recoveryCode) {
+        setNewRecoveryCode(result.recoveryCode);
+        setSecurityModal('recovery-result');
+      } else {
+        setSecurityModal(null);
+        notify(securityModal === 'password' ? 'เปลี่ยนรหัสผ่านแล้ว' : 'เปลี่ยน PIN แล้ว');
+      }
+      const logResponse = await fetch('/api/audit-logs');
+      if (logResponse.ok) setAuditLogs((await logResponse.json()).logs);
+    } catch (error) {
+      notify(error.message === 'invalid_credentials' ? 'รหัสผ่านปัจจุบันไม่ถูกต้อง' : 'ดำเนินการไม่สำเร็จ');
+    }
   }
 
   async function saveCurrentSettings() {
@@ -167,17 +212,46 @@ export default function SettingsPage() {
         <section className="settings-section">
           <div className="settings-section-heading"><h2>ความปลอดภัยและข้อมูล</h2><span>สำรองและกู้คืนการตั้งค่า</span></div>
           <div className="settings-actions">
-            <button type="button" disabled title="ยังไม่เชื่อมระบบบัญชีผู้ใช้">เปลี่ยน Master Password</button>
-            <button type="button" disabled title="ยังไม่เชื่อมระบบบัญชีผู้ใช้">เปลี่ยน PIN ล็อกหน้าจอ</button>
-            <button type="button" disabled title="ยังไม่เชื่อมระบบบัญชีผู้ใช้">Recovery Code</button>
+            <button type="button" onClick={() => openSecurityModal('password')}>เปลี่ยนรหัสผ่านบัญชีผู้ดูแล</button>
+            <button type="button" onClick={() => openSecurityModal('pin')}>เปลี่ยน PIN ผู้ดูแล</button>
+            <button type="button" onClick={() => openSecurityModal('recovery')}>ออก Recovery Code ใหม่</button>
             <button type="button" onClick={exportSettings}>Export ตั้งค่า</button>
             <button type="button" onClick={() => importInput.current?.click()}>Import ตั้งค่า</button>
             <input ref={importInput} className="settings-import-input" type="file" accept="application/json,.json" onChange={importSettings} />
           </div>
-          <p className="settings-note">การตั้งค่าคลินิกบันทึกใน Oracle Database · Export/Import ครอบคลุมเฉพาะการตั้งค่าคลินิก · ระบบรหัสผ่านและ PIN ยังไม่เชื่อมต่อ</p>
+          <p className="settings-note">รหัสผ่านและ PIN ถูกจัดเก็บเป็น hash · Recovery Code เดิมจะใช้ไม่ได้หลังออก code ใหม่</p>
+        </section>
+        <section className="settings-section settings-audit-section">
+          <div className="settings-section-heading"><h2>ประวัติการเข้าใช้และการเปลี่ยนแปลง</h2><span>แสดง 100 รายการล่าสุด</span></div>
+          <div className="settings-audit-wrap"><table className="settings-audit-table">
+            <thead><tr><th>วันเวลา</th><th>ผู้ใช้</th><th>เหตุการณ์</th><th>รายละเอียด</th></tr></thead>
+            <tbody>{auditLogs.map((entry) => <tr key={entry.id}>
+              <td>{new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.createdAt))}</td>
+              <td>{entry.staffName}<small>{entry.email}</small></td>
+              <td>{entry.action}</td>
+              <td>{entry.details ? JSON.stringify(entry.details) : `${entry.entity || ''}${entry.entityId ? ` #${entry.entityId}` : ''}`}</td>
+            </tr>)}</tbody>
+          </table>{!auditLogs.length && <p className="settings-audit-empty">ยังไม่มีประวัติการใช้งาน</p>}</div>
         </section>
       </div>
     </main>
+    {securityModal && <div className="customer-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSecurityModal(null)}>
+      <section className="customer-modal security-modal" role="dialog" aria-modal="true" aria-labelledby="security-modal-title">
+        <button type="button" className="modal-close" aria-label="ปิด" onClick={() => setSecurityModal(null)}>×</button>
+        {securityModal === 'recovery-result' ? <>
+          <h2 id="security-modal-title">Recovery Code ใหม่</h2>
+          <p>เก็บรหัสนี้ไว้ในที่ปลอดภัย ระบบจะแสดงให้ดูครั้งนี้ครั้งเดียว และรหัสเดิมใช้ไม่ได้แล้ว</p>
+          <code className="recovery-code-value">{newRecoveryCode}</code>
+          <button type="button" className="modal-submit" onClick={() => setSecurityModal(null)}>เรียบร้อย</button>
+        </> : <form onSubmit={submitSecurityChange}>
+          <h2 id="security-modal-title">{securityModal === 'password' ? 'เปลี่ยนรหัสผ่านบัญชีผู้ดูแล' : securityModal === 'pin' ? 'เปลี่ยน PIN ผู้ดูแล' : 'ออก Recovery Code ใหม่'}</h2>
+          <label>รหัสผ่านปัจจุบัน<input required type="password" autoComplete="current-password" value={securityForm.currentPassword} onChange={(event) => setSecurityForm({ ...securityForm, currentPassword: event.target.value })} /></label>
+          {securityModal === 'password' && <label>รหัสผ่านใหม่<input required minLength="8" type="password" autoComplete="new-password" value={securityForm.password} onChange={(event) => setSecurityForm({ ...securityForm, password: event.target.value })} /></label>}
+          {securityModal === 'pin' && <label>PIN ใหม่ (4–6 หลัก)<input required inputMode="numeric" maxLength="6" pattern="[0-9]{4,6}" type="password" autoComplete="new-password" value={securityForm.pin} onChange={(event) => setSecurityForm({ ...securityForm, pin: event.target.value.replace(/\D/g, '') })} /></label>}
+          <div className="security-modal-actions"><button type="button" className="modal-cancel" onClick={() => setSecurityModal(null)}>ยกเลิก</button><button type="submit" className="modal-submit">ยืนยัน</button></div>
+        </form>}
+      </section>
+    </div>}
     {toast && <div className="toast" role="status"><b>OK</b>{toast}</div>}
   </div>;
 }
