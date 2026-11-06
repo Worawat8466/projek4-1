@@ -24,13 +24,17 @@ export async function createSale(input) {
     }
 
     let customerId = null;
+    let customerName = 'ลูกค้าทั่วไป';
+    let customerPhone = null;
     if (input.customerCode) {
       const result = await connection.execute(
-        `SELECT customer_id FROM customers WHERE customer_code = :code AND is_active = 'Y'`,
+        `SELECT customer_id, first_name, last_name, phone FROM customers WHERE customer_code = :code AND is_active = 'Y'`,
         { code: input.customerCode }, objectRows
       );
       if (!result.rows[0]) throw Object.assign(new Error('customer_not_found'), { code: 'CUSTOMER_NOT_FOUND' });
       customerId = result.rows[0].CUSTOMER_ID;
+      customerName = [result.rows[0].FIRST_NAME, result.rows[0].LAST_NAME].filter(Boolean).join(' ');
+      customerPhone = result.rows[0].PHONE;
     }
 
     const lines = [];
@@ -48,9 +52,10 @@ export async function createSale(input) {
       if (!product) throw Object.assign(new Error('product_not_found'), { code: 'PRODUCT_NOT_FOUND' });
 
       let petId = null;
+      let petName = null;
       if (inputLine.petId != null) {
         const petResult = await connection.execute(
-          `SELECT p.pet_id FROM pets p JOIN customers c ON c.customer_id = p.customer_id
+          `SELECT p.pet_id, p.pet_name FROM pets p JOIN customers c ON c.customer_id = p.customer_id
             WHERE p.pet_id = :petId AND p.is_active = 'Y' AND c.is_active = 'Y'
               AND c.customer_id = :customerId`,
           { petId: Number(inputLine.petId), customerId }, objectRows
@@ -59,6 +64,7 @@ export async function createSale(input) {
           throw Object.assign(new Error('pet_not_owned'), { code: 'PET_NOT_OWNED' });
         }
         petId = petResult.rows[0].PET_ID;
+        petName = petResult.rows[0].PET_NAME;
       }
       const unitPrice = Number(product.BASE_SALE_PRICE);
       const existingLine = lines.find((line) => line.product.PRODUCT_ID === product.PRODUCT_ID && line.petId === petId);
@@ -66,7 +72,7 @@ export async function createSale(input) {
         existingLine.quantity += quantity;
         existingLine.lineTotal += unitPrice * quantity;
       } else {
-        lines.push({ product, quantity, petId, unitPrice, lineTotal: unitPrice * quantity, allocations: [] });
+        lines.push({ product, quantity, petId, petName, unitPrice, lineTotal: unitPrice * quantity, allocations: [] });
       }
     }
 
@@ -167,7 +173,21 @@ export async function createSale(input) {
       `INSERT INTO sale_payments (sale_id, payment_method, amount) VALUES (:saleId, :paymentMethod, :total)`,
       { saleId, paymentMethod, total }
     );
-    return { saleId: Number(saleId), receiptNumber, subtotal, discount, netSales, vatRate, vatAmount, total };
+    return {
+      saleId: Number(saleId), receiptNumber, soldAt: new Date().toISOString(), customerName, customerPhone,
+      paymentMethod: paymentMethod === 'CASH' ? 'เงินสด' : 'พร้อมเพย์',
+      subtotal, discount, netSales, vatRate, vatAmount, total,
+      items: lines.map((line, index) => ({
+        id: index + 1,
+        name: line.product.PRODUCT_NAME,
+        type: line.product.TRACKS_STOCK === 'Y' ? 'สินค้า' : 'บริการ',
+        unitName: line.product.BASE_UNIT,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+        petName: line.petName
+      }))
+    };
   });
 }
 

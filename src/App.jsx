@@ -47,6 +47,7 @@ export default function App() {
   const [pets, setPets] = useState([]);
   const [dataError, setDataError] = useState('');
   const [savingSale, setSavingSale] = useState(false);
+  const [receipt, setReceipt] = useState(null);
   const [query, setQuery] = useState('');
   const barcodeInputRef = useRef(null);
   const [category, setCategory] = useState('all');
@@ -231,6 +232,7 @@ export default function App() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'sale_failed');
+      setReceipt(result.sale);
       setPaymentMethod('');
       setCart({ none: [] });
       try {
@@ -309,6 +311,42 @@ export default function App() {
     </main>
     {toast && <div className="toast"><b>OK</b>{toast}</div>}
     {paymentMethod && <div className="modal-backdrop"><div className="modal"><div className="modal-icon">OK</div><h2>ยืนยันการรับชำระเงิน</h2><p>ช่องทาง: <b>{paymentMethod}</b></p><div className="modal-total"><small>ยอดชำระสุทธิ</small><strong className="mono">฿{net}</strong></div><div className="modal-actions"><button disabled={savingSale} onClick={() => setPaymentMethod('')}>ยกเลิก</button><button disabled={savingSale} onClick={confirmPayment}>{savingSale ? 'กำลังบันทึก...' : 'บันทึกการขาย'}</button></div></div></div>}
+    {receipt && <div className="receipt-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setReceipt(null)}>
+      <section className="receipt-preview" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+        <div className="receipt-toolbar">
+          <h2 id="receipt-title">บันทึกการขายแล้ว</h2>
+          <button type="button" className="receipt-close" aria-label="ปิด" onClick={() => setReceipt(null)}>×</button>
+        </div>
+        <article className="receipt-paper">
+          <header className="receipt-heading">
+            <h3>{appSettings.clinicName}</h3>
+            <p>{appSettings.address}</p>
+            {appSettings.phone && <p>โทร. {appSettings.phone}</p>}
+            {appSettings.taxId && <p>เลขประจำตัวผู้เสียภาษี {appSettings.taxId}</p>}
+            <strong>ใบเสร็จรับเงิน</strong>
+          </header>
+          <div className="receipt-meta"><span>เลขที่บิล</span><strong>{receipt.receiptNumber}</strong></div>
+          <div className="receipt-meta"><span>วันที่</span><span>{new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(receipt.soldAt))}</span></div>
+          <div className="receipt-meta"><span>ลูกค้า</span><span>{receipt.customerName || 'ลูกค้าทั่วไป'}</span></div>
+          {receipt.customerPhone && <div className="receipt-meta"><span>โทรศัพท์</span><span>{receipt.customerPhone}</span></div>}
+          <div className="receipt-meta"><span>ชำระโดย</span><span>{receipt.paymentMethod}</span></div>
+          <table className="receipt-items"><thead><tr><th>รายการ</th><th>จำนวน</th><th>ราคา</th><th>รวม</th></tr></thead>
+            <tbody>{receipt.items.map((item) => <tr key={`${item.id}-${item.petName || 'general'}`}>
+              <td>{item.name}{item.petName && <small>สัตว์เลี้ยง: {item.petName}</small>}</td>
+              <td>{Number(item.quantity).toLocaleString('th-TH')} {item.unitName}</td>
+              <td>฿{Number(item.unitPrice).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+              <td>฿{Number(item.lineTotal).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+            </tr>)}</tbody>
+          </table>
+          <div className="receipt-total-row"><span>ยอดรวม</span><span>฿{Number(receipt.subtotal).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>
+          {Number(receipt.discount) > 0 && <div className="receipt-total-row"><span>ส่วนลด</span><span>-฿{Number(receipt.discount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>}
+          {Number(receipt.vatRate) > 0 && <div className="receipt-total-row"><span>VAT {receipt.vatRate}%</span><span>฿{Number(receipt.vatAmount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span></div>}
+          <div className="receipt-total-row receipt-grand-total"><strong>ยอดชำระสุทธิ</strong><strong>฿{Number(receipt.total).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</strong></div>
+          <footer className="receipt-footer">{appSettings.receiptFooter}</footer>
+        </article>
+        <div className="receipt-actions"><button type="button" className="modal-cancel" onClick={() => setReceipt(null)}>ปิด</button><button type="button" className="modal-submit" onClick={() => window.print()}>พิมพ์ใบเสร็จ</button></div>
+      </section>
+    </div>}
     {customerModalOpen && <div className="customer-picker-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCustomerModalOpen(false)}><section className="customer-picker" role="dialog" aria-modal="true" aria-labelledby="customer-picker-title"><button className="modal-close" type="button" aria-label="ปิด" onClick={() => setCustomerModalOpen(false)}>×</button><h2 id="customer-picker-title">เลือกลูกค้า</h2><p>ค้นหาและเลือกลูกค้าสำหรับรายการขายนี้</p><label className="customer-picker-search"><SearchIcon /><input autoFocus value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="ค้นหาชื่อ เบอร์โทร หรือไอดี..." /></label><div className="customer-picker-list">{filteredCustomers.map((customer) => <button type="button" className={selectedCustomer?.id === customer.id ? 'selected' : ''} key={customer.id} onClick={() => { setSelectedCustomer(customer); setCart((current) => ({ none: Object.values(current).flat() })); const firstPet = pets.find((pet) => pet.ownerCode === customer.id); setActivePet(firstPet ? String(firstPet.petId) : 'none'); setCustomerModalOpen(false); notify(`เลือกลูกค้า ${customer.name} แล้ว`); }}><ProfileAvatar className="picker-avatar" src={customer.photoUrl} name={customer.name} /><span><b>{customer.name}</b><small>{customer.phone} · สัตว์เลี้ยง {customer.petCount} ตัว</small></span><span className="picker-id mono">{customer.id}</span></button>)}{filteredCustomers.length === 0 && <div className="customer-picker-empty">ไม่พบข้อมูลลูกค้า</div>}</div><button className="picker-guest" type="button" onClick={() => { selectGuestCustomer(); setCustomerModalOpen(false); }}>ขายให้ลูกค้าทั่วไป</button></section></div>}
     {screenLocked && <div className="screen-lock"><form className="screen-lock-card" onSubmit={unlockScreen}><div className="screen-lock-mark">TC</div><h2>หน้าจอถูกล็อก</h2><p>กรอก PIN เพื่อกลับเข้าสู่หน้าร้าน</p><input autoFocus inputMode="numeric" maxLength="6" pattern="[0-9]*" type="password" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '')); setPinError(''); }} placeholder="PIN 4-6 หลัก" /><span className="screen-lock-error">{pinError}</span><button type="submit">ปลดล็อก</button></form></div>}
   </div>;
