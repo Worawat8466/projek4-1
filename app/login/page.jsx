@@ -18,6 +18,9 @@ export default function LoginPage() {
   const [newPin, setNewPin] = useState('');
   const [message, setMessage] = useState('');
   const [generatedCode, setGeneratedCode] = useState('');
+  const [demoResetOpen, setDemoResetOpen] = useState(false);
+  const [demoResetConfirmation, setDemoResetConfirmation] = useState('');
+  const [demoResetBusy, setDemoResetBusy] = useState(false);
 
   useEffect(() => {
     fetch('/api/auth')
@@ -102,6 +105,33 @@ export default function LoginPage() {
     }
   }
 
+  async function handleDemoReset(event) {
+    event.preventDefault();
+    if (demoResetConfirmation !== 'RESET ADMIN') {
+      showError('พิมพ์ RESET ADMIN เพื่อยืนยัน');
+      return;
+    }
+    setDemoResetBusy(true);
+    try {
+      const response = await fetch('/api/auth', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset-demo-admin', confirmation: demoResetConfirmation })
+      });
+      if (!response.ok) throw new Error('demo_reset_failed');
+      setPassword('');
+      setPin('');
+      setRecoveryCode('');
+      setMessage('บัญชีผู้ดูแลถูกรีเซ็ตแล้ว ข้อมูลคลินิกยังอยู่ ตั้งบัญชีใหม่ได้เลย');
+      setDemoResetOpen(false);
+      setDemoResetConfirmation('');
+      setMode('setup');
+    } catch {
+      showError('รีเซ็ตบัญชีทดสอบไม่สำเร็จ');
+    } finally {
+      setDemoResetBusy(false);
+    }
+  }
+
   if (!ready) return <main className="login-page"><section className="login-card" aria-busy="true" /></main>;
 
   return <main className="login-page">
@@ -128,6 +158,7 @@ export default function LoginPage() {
           <button className="login-submit" type="submit">เข้าสู่ระบบ</button>
         </form>
         <button className="forgot-password" type="button" onClick={() => { setMessage(''); setMode('recover'); }}>กู้คืนด้วย Recovery Code</button>
+        {process.env.NODE_ENV !== 'production' && <button className="forgot-password demo-reset-link" type="button" onClick={() => { setMessage(''); setDemoResetConfirmation(''); setDemoResetOpen(true); }}>ลืม password และ Recovery Code? รีเซ็ตบัญชีเพื่อทดสอบ</button>}
       </>}
 
       {mode === 'recover' && <>
@@ -147,6 +178,14 @@ export default function LoginPage() {
         <div className="login-heading"><p>IMPORTANT · แสดงครั้งเดียว</p><h1>บันทึกรหัสกู้คืน</h1><span>จดหรือพิมพ์รหัสนี้เก็บไว้นอกเครื่อง ปิดหน้านี้แล้วจะเรียกดูรหัสเดิมไม่ได้</span></div>
         <code>{generatedCode}</code>
         <button className="login-submit" type="button" onClick={() => { setGeneratedCode(''); window.location.href = '/'; }}>ฉันบันทึกรหัสแล้ว</button>
+      </div>}
+      {demoResetOpen && <div className="demo-reset-backdrop">
+        <form className="demo-reset-dialog" onSubmit={handleDemoReset}>
+          <h2>รีเซ็ตบัญชีผู้ดูแลสำหรับทดสอบ?</h2>
+          <p>จะปิดบัญชี Admin และออกจากทุก session จากนั้นกลับไปหน้า Setup ข้อมูลลูกค้า สัตว์เลี้ยง สินค้า สต็อก และยอดขายจะไม่ถูกลบ</p>
+          <label>พิมพ์ RESET ADMIN เพื่อยืนยัน<input autoFocus value={demoResetConfirmation} onChange={(event) => setDemoResetConfirmation(event.target.value)} /></label>
+          <div className="demo-reset-actions"><button type="button" onClick={() => setDemoResetOpen(false)}>ยกเลิก</button><button type="submit" disabled={demoResetBusy || demoResetConfirmation !== 'RESET ADMIN'}>{demoResetBusy ? 'กำลังรีเซ็ต...' : 'รีเซ็ต Admin'}</button></div>
+        </form>
       </div>}
       <p className="login-footer">TleClinic POS <span>•</span> บัญชีและ session จัดเก็บในฐานข้อมูลคลินิก</p>
     </section>

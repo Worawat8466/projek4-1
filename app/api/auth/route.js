@@ -6,6 +6,7 @@ import {
   loginStaff,
   recoverStaffAccount,
   resetAdminSetup,
+  resetAdminSetupForDemo,
   rotateAdminRecoveryCode,
   setupAdmin
 } from '../../../src/server/authRepository.js';
@@ -49,6 +50,14 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const input = await request.json();
+    if (input.action === 'reset-demo-admin') {
+      if (process.env.NODE_ENV === 'production') return Response.json({ error: 'not_available' }, { status: 404 });
+      if (input.confirmation !== 'RESET ADMIN') return Response.json({ error: 'confirmation_required' }, { status: 400 });
+      await resetAdminSetupForDemo();
+      return Response.json({ ok: true }, {
+        headers: { 'Set-Cookie': `${cookieName}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0` }
+      });
+    }
     if (input.action === 'change-admin-credentials' || input.action === 'rotate-recovery-code' || input.action === 'reset-admin-setup') {
       const token = getSessionToken(request);
       const identity = await getSessionIdentity(token);

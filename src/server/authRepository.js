@@ -259,6 +259,27 @@ export async function resetAdminSetup(token, input) {
   });
 }
 
+export async function resetAdminSetupForDemo() {
+  return withOracleTransaction(async (connection) => {
+    const admins = await connection.execute(
+      `SELECT s.staff_id FROM staff s JOIN staff_roles r ON r.role_id = s.role_id
+        WHERE r.role_code = 'ADMIN' AND s.is_active = 'Y' FOR UPDATE OF s.is_active`,
+      [], objectRows
+    );
+    for (const admin of admins.rows) {
+      await writeAuditLog(connection, admin.STAFF_ID, 'ADMIN_SETUP_RESET_FOR_DEMO', 'STAFF', admin.STAFF_ID, {
+        businessDataPreserved: true
+      });
+    }
+    await connection.execute(
+      `UPDATE staff s SET is_active = 'N', password_hash = NULL, pin_hash = NULL,
+              recovery_code_hash = NULL, updated_at = SYSTIMESTAMP
+        WHERE EXISTS (SELECT 1 FROM staff_roles r WHERE r.role_id = s.role_id AND r.role_code = 'ADMIN')`
+    );
+    await connection.execute('DELETE FROM auth_sessions');
+  });
+}
+
 export async function validateSession(token) {
   if (!token) return false;
   return withOracleConnection(async (connection) => {
