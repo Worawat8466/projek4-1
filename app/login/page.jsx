@@ -158,7 +158,6 @@ export default function LoginPage() {
           <button className="login-submit" type="submit">เข้าสู่ระบบ</button>
         </form>
         <button className="forgot-password" type="button" onClick={() => { setMessage(''); setMode('recover'); }}>กู้คืนด้วย Recovery Code</button>
-        {process.env.NODE_ENV !== 'production' && <button className="forgot-password demo-reset-link" type="button" onClick={() => { setMessage(''); setDemoResetConfirmation(''); setDemoResetOpen(true); }}>ลืม password และ Recovery Code? รีเซ็ตบัญชีเพื่อทดสอบ</button>}
       </>}
 
       {mode === 'recover' && <>
@@ -179,6 +178,7 @@ export default function LoginPage() {
         <code>{generatedCode}</code>
         <button className="login-submit" type="button" onClick={() => { setGeneratedCode(''); window.location.href = '/'; }}>ฉันบันทึกรหัสแล้ว</button>
       </div>}
+      {(mode === 'login' || mode === 'setup') && process.env.NODE_ENV !== 'production' && <button className="demo-reset-link" type="button" onClick={() => { setMessage(''); setDemoResetConfirmation(''); setDemoResetOpen(true); }}>RESET ADMIN · รีเซ็ตบัญชีสำหรับทดสอบ</button>}
       {demoResetOpen && <div className="demo-reset-backdrop">
         <form className="demo-reset-dialog" onSubmit={handleDemoReset}>
           <h2>รีเซ็ตบัญชีผู้ดูแลสำหรับทดสอบ?</h2>
